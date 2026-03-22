@@ -173,8 +173,9 @@ async function loadMessages() {
 }
 
 async function sendMessage() {
-    const input = document.getElementById('msg-input');
-    const text = input.value.trim();
+    const input = document.getElementById('msg-input').value;
+    document.getElementById('msg-input').value = '';
+    const text = input.trim();
     const receiver = currentChat || document.getElementById('new-chat-user').value.trim();
     if (!text || !receiver) return;
 
@@ -182,7 +183,18 @@ async function sendMessage() {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({receiver, messageText: text})
     });
-    if (res.ok) { input.value = ''; if (!currentChat) selectChat(receiver); else loadMessages(); } 
+    if (res.ok) { 
+        input.value = '';
+        if (!currentChat){
+            selectChat(receiver);
+        }
+        else {
+            loadMessages(); 
+        } 
+    }
+    else {
+        document.getElementById('msg-input').value = input;
+    }
 }
 
 async function handleFileUpload() {
