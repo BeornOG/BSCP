@@ -5,11 +5,12 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 # --- Config ---
-asedir = os.path.abspath(os.path.dirname(__file__))
+basedir = os.path.abspath(os.path.dirname(__file__))
 env_file = sys.argv[1] if len(sys.argv) > 1 else ".env"
 load_dotenv(env_file)
 PORT = int(os.getenv("CH_PORT", 6000))
 DB_NAME = os.getenv("DB_NAME", f"database_{PORT}.db")
+DOMAIN = os.getenv("DOMAIN", f"localhost:{PORT}")
 DB_NAME = os.path.join(basedir, DB_NAME)
 
 app = Flask(__name__)
@@ -53,20 +54,29 @@ def receive_from_user_server():
 @app.route("/api/channel/poll")
 def poll_messages():
     path = request.args.get("path")
-    last_id = request.args.get("after_id", type=int, default=0)
     limit = request.args.get("limit", type=int, default=50)
-    
-    # Efficiently get only new messages since the last one the user saw
+    since = request.args.get("since")   # ISO Formaat: 2023-10-01T12:00:00
+    before = request.args.get("before") # Voor historiek opvragen
+
     query = ChannelMessage.query.filter(ChannelMessage.channel_path == path)
-    query = query.filter(ChannelMessage.id > last_id)
+
+    if since:
+        dt_since = datetime.fromisoformat(since)
+        query = query.filter(ChannelMessage.timestamp > dt_since)
     
-    msgs = query.order_by(ChannelMessage.id.desc()).limit(limit).all()
+    if before:
+        dt_before = datetime.fromisoformat(before)
+        query = query.filter(ChannelMessage.timestamp < dt_before)
+
+    # We sorteren op DESC om de nieuwste 'X' berichten te pakken
+    msgs = query.order_by(ChannelMessage.timestamp.desc()).limit(limit).all()
     
+    # Keer de lijst om voor chronologische weergave in de UI
     return jsonify([{
         "id": m.id, 
         "sender": m.sender, 
         "text": m.text, 
-        "time": m.timestamp
+        "time": m.timestamp.isoformat()
     } for m in reversed(msgs)])
 
 if __name__ == "__main__":

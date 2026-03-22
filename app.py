@@ -28,7 +28,7 @@ if not os.path.exists(CACHE_DIR):
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-print(f"--- Node Configuration ---")
+print(f"--- UserNode Configuration ---")
 print(f"Configuratie: {env_file}")
 print(f"Domain:       {DOMAIN}")
 print(f"Port:         {PORT}")
