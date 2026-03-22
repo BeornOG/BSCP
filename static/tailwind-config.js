@@ -1,3 +1,4 @@
+/* static/tailwind-config.js */
 tailwind.config = {
     darkMode: "class",
     theme: {
