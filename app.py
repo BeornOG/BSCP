@@ -91,21 +91,35 @@ def send_message():
     msg_uuid = str(uuid.uuid4())
     full_id = f"{DOMAIN}/{msg_uuid}" # Unieke ID over federatie heen
     val_key = "key-" + msg_uuid[:8]
-
     new_msg = Message(id=full_id, sender=session['username'], receiver=data['receiver'], 
                       text=data['messageText'], validation_key=val_key)
     db.session.add(new_msg)
     db.session.commit()
-    
-    target_domain = data['receiver'].split('@')[-1]
-    payload = {"id": full_id, "sender": session['username'], "receiver": data['receiver'], 
-               "text": data['messageText'], "validationKey": val_key}
-    
-    try:
-        requests.post(f"http://{target_domain}/federation/receive", json=payload, timeout=3)
-        return jsonify({"status": "Sent"})
-    except:
-        return jsonify({"error": "Offline"}), 500
+    receiver = data['receiver'] # e.g. "domain.com#general#news"
+
+    # --- CHANNEL LOGIC ---
+    if "#" in receiver:
+        target_domain = receiver.split('#')[0]
+        payload = {"id": full_id, "sender": session['username'], "receiver": receiver, 
+                   "text": data['messageText'], "validationKey": val_key}
+        try:
+            # Assuming channel server runs on a known port or same domain
+            requests.post(f"http://{target_domain}/api/channel/send", json=payload, timeout=3)
+            return jsonify({"status": "Sent to Channel"})
+        except:
+            return jsonify({"error": "Channel Server Offline"}), 500
+    else:
+        
+
+        target_domain = receiver.split('@')[-1]
+        payload = {"id": full_id, "sender": session['username'], "receiver": receiver, 
+                   "text": data['messageText'], "validationKey": val_key}
+
+        try:
+            requests.post(f"http://{target_domain}/federation/receive", json=payload, timeout=3)
+            return jsonify({"status": "Sent"})
+        except:
+            return jsonify({"error": "Offline"}), 500
 
 @app.route("/federation/receive", methods=["POST"])
 def receive_message():

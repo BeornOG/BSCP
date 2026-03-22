@@ -1,6 +1,7 @@
 // --- APP STATE & MESSAGING LOGIC ---
 let currentChat = null;
 let lastMsgCount = 0;
+let isAtBottom = true;
 
 const defaultDisplayName = '{{ user.split("@")[0] }}';
 marked.setOptions({ gfm: true, breaks: true, headerIds: false, mangle: false });
@@ -121,6 +122,8 @@ function selectChat(chat) {
     currentChat = chat; lastMsgCount = 0; 
     document.getElementById('chat-header').innerText = chat;
     document.getElementById('new-chat-user').style.display = 'none';
+    isAtBottom = true; // Reset naar true zodat een nieuwe chat altijd onderaan begint
+    container.innerHTML = '';
     loadMessages(); loadChats();
 }
 
@@ -131,6 +134,7 @@ async function loadMessages() {
     
     if (msgs.length !== lastMsgCount) {
         const container = document.getElementById('messages');
+        const wasAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
         container.innerHTML = '';
         msgs.forEach(m => {
             const isMe = m.sender === currentUser;
@@ -144,6 +148,10 @@ async function loadMessages() {
                     img.src = `/media/proxy?url=${encodeURIComponent(original)}`;
                 }
                 img.loading = "lazy";
+                img.onload = () => {
+                    // Alleen scrollen als de gebruiker al onderaan stond
+                    if (wasAtBottom) container.scrollTop = container.scrollHeight;
+                };
             });
             
             htmlContent = temp.innerHTML;
@@ -167,7 +175,9 @@ async function loadMessages() {
             }
             container.appendChild(div);
         });
-        container.scrollTop = container.scrollHeight;
+        if (lastMsgCount === 0 || wasAtBottom) {
+            container.scrollTop = container.scrollHeight;
+        }
         lastMsgCount = msgs.length;
     }
 }
