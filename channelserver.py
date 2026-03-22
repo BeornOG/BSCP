@@ -18,7 +18,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 class ChannelMessage(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.String(255), primary_key=True)
     channel_path = db.Column(db.String(255), index=True) # domain#channel#sub
     sender = db.Column(db.String(100))
     text = db.Column(db.Text)
@@ -38,6 +38,7 @@ def receive_from_user_server():
         if val_resp.json().get("valid"):
             full_id = f"{DOMAIN}/message/{data['id']}"
             new_msg = ChannelMessage(
+                id = full_id,
             channel_path=data['receiver'],
             sender=data['sender'],
             text=data['text']
