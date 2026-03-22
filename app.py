@@ -81,7 +81,7 @@ def get_messages(partner):
     
     return jsonify([{
         "id": m.id, "sender": m.sender, "text": m.text, 
-        "time": m.timestamp.strftime("%H:%M")
+        "time": m.timestamp
     } for m in msgs])
 
 @app.route("/api/sendmessage", methods=["POST"])

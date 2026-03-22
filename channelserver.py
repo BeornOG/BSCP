@@ -43,10 +43,10 @@ def receive_from_user_server():
             channel_path=data['receiver'],
             sender=data['sender'],
             text=data['text']
-        )
-        db.session.add(new_msg)
-        db.session.commit()
-        return jsonify({"status": "stored", "id": new_msg.id})
+            )
+            db.session.add(new_msg)
+            db.session.commit()
+            return jsonify({"status": "stored", "id": new_msg.id})
     except: pass
     return "Invalid", 401
     
