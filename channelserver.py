@@ -57,8 +57,8 @@ def receive_from_user_server():
 def poll_messages():
     path = request.args.get("path")
     limit = request.args.get("limit", type=int, default=50)
-    since = request.args.get("since")   # UTC epoch
-    before = request.args.get("before") # Voor historiek opvragen
+    since = request.args.get("since" type=float)   # UTC epoch
+    before = request.args.get("before" type=float) # Voor historiek opvragen
 
     query = ChannelMessage.query.filter(ChannelMessage.channel_path == path)
 

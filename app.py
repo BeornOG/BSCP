@@ -1,4 +1,4 @@
-import sys, uuid, requests, os
+import sys, uuid, requests, os, io
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for, send_file, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
@@ -7,7 +7,7 @@ import os, re, markdown, hashlib
 from flask import send_from_directory, url_for
 from werkzeug.utils import secure_filename
 import mimetypes
-from datetime import datetime
+
 
 # Config & Logging
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -76,8 +76,8 @@ def get_messages(target):
     if 'username' not in session: return "Unauthorized", 401
     me = session['username']
 
-    since = request.args.get("since")   # Get messages AFTER this time
-    before = request.args.get("before") # Get messages BEFORE this time (for history)
+    since = request.args.get("since", type=float)    # Get messages AFTER this time
+    before = request.args.get("before", type=float)  # Get messages BEFORE this time (for history)
     limit = request.args.get("limit", type=int, default=50)
 
     # BRANCH: Channel Server (External)
@@ -183,10 +183,10 @@ def index():
     if 'username' not in session: return redirect(url_for('login'))
     return render_template('index.html', user=session['username'])
 
-@app.route("/api/GetLocalName")
-def index():
-    if 'username' not in session: return redirect(url_for('login'))
-    return f'"username":"{session['username']}'
+#@app.route("/api/GetLocalName")
+#def index():
+    #if 'username' not in session: return redirect(url_for('login'))
+    #return f'"username":"{session['username']}'
 
 #media stuff
 @app.route("/media/proxy")

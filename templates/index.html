@@ -4,6 +4,10 @@
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>Atelier Messages</title>
+    <script>
+        const defaultDisplayName = '{{ user.split("@")[0] }}';
+        const currentUser = '{{ user }}';
+    </script>
     
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <script src="/static/tailwind-config.js"></script>
@@ -149,8 +153,6 @@
     </div>
 </div>
 <script>
-    const defaultDisplayName = '{{ user.split("@")[0] }}';
-    const currentUser = '{{ user }}';
     initApp();
 </script>
 
