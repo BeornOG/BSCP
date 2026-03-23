@@ -57,18 +57,16 @@ def receive_from_user_server():
 def poll_messages():
     path = request.args.get("path")
     limit = request.args.get("limit", type=int, default=50)
-    since = request.args.get("since")   # ISO Formaat: 2023-10-01T12:00:00
+    since = request.args.get("since")   # UTC epoch
     before = request.args.get("before") # Voor historiek opvragen
 
     query = ChannelMessage.query.filter(ChannelMessage.channel_path == path)
 
     if since:
-        dt_since = datetime.fromisoformat(since)
-        query = query.filter(ChannelMessage.timestamp > dt_since)
+        query = query.filter(ChannelMessage.timestamp > datetime.fromtimestamp(since))
     
     if before:
-        dt_before = datetime.fromisoformat(before)
-        query = query.filter(ChannelMessage.timestamp < dt_before)
+        query = query.filter(ChannelMessage.timestamp < datetime.fromtimestamp(before))
 
     # We sorteren op DESC om de nieuwste 'X' berichten te pakken
     msgs = query.order_by(ChannelMessage.timestamp.desc()).limit(limit).all()
