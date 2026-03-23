@@ -1,9 +1,12 @@
 // --- APP STATE & MESSAGING LOGIC ---
 let currentChat = null;
-let lastMsgCount = 0;
-let isAtBottom = true;
+let loadedMessageIds = new Set();
+let oldestMsgTime = null;
+let newestMsgTime = null;
+let isFetchingMessages = false;
 
-
+// Declared exactly once, right at the top
+//const defaultDisplayName = '{{ user.split("@")[0] }}';
 marked.setOptions({ gfm: true, breaks: true, headerIds: false, mangle: false });
 
 // --- SETTINGS STATE LOGIC ---
@@ -87,8 +90,11 @@ function toggleView(viewName) {
 }
 
 // --- EXISTING CHAT LOGIC (Preserved) ---
-function uiStartNewChat() { /* ... original logic ... */
-    currentChat = null; lastMsgCount = 0;
+function uiStartNewChat() {
+    currentChat = null; 
+    loadedMessageIds.clear();
+    oldestMsgTime = null;
+    newestMsgTime = null;
     document.getElementById('chat-header').innerText = "New Chat";
     document.getElementById('messages').innerHTML = '';
     const ncu = document.getElementById('new-chat-user');
@@ -96,91 +102,171 @@ function uiStartNewChat() { /* ... original logic ... */
 }
 
 async function loadChats() {
-    const res = await fetch('/api/chats');
-    const chats = await res.json();
-    const list = document.getElementById('chat-list');
-    list.innerHTML = '';
-    chats.forEach(chat => {
-        const isActive = (currentChat === chat);
-        const activeClasses = isActive ? 'bg-surface-container-highest border-l-4 border-primary' : 'hover:bg-surface-container-high';
-        const div = document.createElement('div');
-        div.className = `${activeClasses} rounded-lg p-4 flex items-center gap-4 cursor-pointer transition-all duration-200`;
-        div.onclick = () => selectChat(chat);
-        div.innerHTML = `
-            <div class="relative flex-shrink-0">
-                <div class="w-10 h-10 rounded-lg bg-primary/20 text-primary flex items-center justify-center font-bold">
-                    ${chat.substring(0, 2).toUpperCase()}
+    try {
+        const res = await fetch('/api/chats');
+        const chats = await res.json();
+        const list = document.getElementById('chat-list');
+        list.innerHTML = '';
+        chats.forEach(chat => {
+            const isActive = (currentChat === chat);
+            const activeClasses = isActive ? 'bg-surface-container-highest border-l-4 border-primary' : 'hover:bg-surface-container-high';
+            const div = document.createElement('div');
+            div.className = `${activeClasses} rounded-lg p-4 flex items-center gap-4 cursor-pointer transition-all duration-200`;
+            div.onclick = () => selectChat(chat);
+            div.innerHTML = `
+                <div class="relative flex-shrink-0">
+                    <div class="w-10 h-10 rounded-lg bg-primary/20 text-primary flex items-center justify-center font-bold">
+                        ${chat.substring(0, 2).toUpperCase()}
+                    </div>
                 </div>
-            </div>
-            <div class="flex-1 min-w-0"><h3 class="font-bold text-sm truncate text-on-surface">${chat}</h3></div>
-        `;
-        list.appendChild(div);
-    });
+                <div class="flex-1 min-w-0"><h3 class="font-bold text-sm truncate text-on-surface">${chat}</h3></div>
+            `;
+            list.appendChild(div);
+        });
+    } catch (err) {
+        console.error("Failed to load chats:", err);
+    }
 }
 
 function selectChat(chat) {
-    currentChat = chat; lastMsgCount = 0; 
+    currentChat = chat; 
+    loadedMessageIds.clear();
+    oldestMsgTime = null;
+    newestMsgTime = null;
     document.getElementById('chat-header').innerText = chat;
     document.getElementById('new-chat-user').style.display = 'none';
-    isAtBottom = true; // Reset naar true zodat een nieuwe chat altijd onderaan begint
-    container.innerHTML = '';
-    loadMessages(); loadChats();
+    document.getElementById('messages').innerHTML = ''; // Clear container
+    loadMessages(); 
+    loadChats();
 }
 
-async function loadMessages() {
-    if (!currentChat || typeof marked === 'undefined') return;
-    const res = await fetch(`/api/messages/${encodeURIComponent(currentChat)}`);
-    const msgs = await res.json();
+function createMessageElement(m) {
+    const isMe = m.sender === currentUser;
     
-    if (msgs.length !== lastMsgCount) {
-        const container = document.getElementById('messages');
-        const wasAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
-        container.innerHTML = '';
-        msgs.forEach(m => {
-            const isMe = m.sender === currentUser;
-            let htmlContent = marked.parse(m.text);
+    // Safety Fallbacks: Prevents fatal errors if the database has a null text/sender row
+    const safeText = m.text || ""; 
+    const safeSender = m.sender ? m.sender.split('@')[0] : "Unknown";
+    
+    let htmlContent = marked.parse(safeText);
 
-            const temp = document.createElement('div');
-            temp.innerHTML = htmlContent;
-            temp.querySelectorAll('img').forEach(img => {
-                const original = img.src;
-                if(!original.includes(window.location.host + '/uploads/')) {
-                    img.src = `/media/proxy?url=${encodeURIComponent(original)}`;
-                }
-                img.loading = "lazy";
-                img.onload = () => {
-                    // Alleen scrollen als de gebruiker al onderaan stond
-                    if (wasAtBottom) container.scrollTop = container.scrollHeight;
-                };
-            });
-            
-            htmlContent = temp.innerHTML;
-            const div = document.createElement('div');
-            
-            // Using User's Custom Display Name for their own messages
-            const displaySender = isMe ? userSettings.displayName : m.sender.split('@')[0];
-
-            if (isMe) {
-                div.className = "flex flex-row-reverse items-end gap-4 max-w-2xl ml-auto group";
-                div.innerHTML = `
-                    <div class="flex-shrink-0 mb-1"><div class="w-8 h-8 rounded-lg bg-primary text-on-primary flex items-center justify-center font-bold text-[10px]">${displaySender.substring(0,2).toUpperCase()}</div></div>
-                    <div class="space-y-1 items-end flex flex-col"><div class="bg-primary text-on-primary p-4 rounded-2xl rounded-br-none shadow-lg text-sm">${htmlContent}</div></div>
-                `;
-            } else {
-                div.className = "flex items-end gap-4 max-w-2xl group";
-                div.innerHTML = `
-                    <div class="flex-shrink-0 mb-1"><div class="w-8 h-8 rounded-lg bg-surface-container-highest flex items-center justify-center text-[10px] font-bold">${displaySender.substring(0,2).toUpperCase()}</div></div>
-                    <div class="space-y-1"><div class="bg-surface-container-high p-4 rounded-2xl rounded-bl-none shadow-sm text-sm">${htmlContent}</div><span class="text-[10px] text-on-surface-variant pl-1">${displaySender}</span></div>
-                `;
-            }
-            container.appendChild(div);
-        });
-        if (lastMsgCount === 0 || wasAtBottom) {
-            container.scrollTop = container.scrollHeight;
+    // Proxy images logic
+    const temp = document.createElement('div');
+    temp.innerHTML = htmlContent;
+    temp.querySelectorAll('img').forEach(img => {
+        const original = img.src;
+        if(!original.includes(window.location.host + '/uploads/')) {
+            img.src = `/media/proxy?url=${encodeURIComponent(original)}`;
         }
-        lastMsgCount = msgs.length;
+        img.loading = "lazy";
+    });
+    htmlContent = temp.innerHTML;
+    
+    // Parse Unix Timestamp (float seconds to milliseconds)
+    const date = new Date((m.time || 0) * 1000);
+    const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const div = document.createElement('div');
+    const displaySender = isMe ? userSettings.displayName : safeSender;
+
+    if (isMe) {
+        div.className = "flex flex-row-reverse items-end gap-4 max-w-2xl ml-auto group mt-2";
+        div.innerHTML = `
+            <div class="flex-shrink-0 mb-1"><div class="w-8 h-8 rounded-lg bg-primary text-on-primary flex items-center justify-center font-bold text-[10px]">${displaySender.substring(0,2).toUpperCase()}</div></div>
+            <div class="space-y-1 items-end flex flex-col">
+                <div class="bg-primary text-on-primary p-4 rounded-2xl rounded-br-none shadow-lg text-sm">${htmlContent}</div>
+                <span class="text-[10px] text-on-surface-variant pr-1 opacity-0 group-hover:opacity-100 transition-opacity">${timeString}</span>
+            </div>
+        `;
+    } else {
+        div.className = "flex items-end gap-4 max-w-2xl group mt-2";
+        div.innerHTML = `
+            <div class="flex-shrink-0 mb-1"><div class="w-8 h-8 rounded-lg bg-surface-container-highest flex items-center justify-center text-[10px] font-bold">${displaySender.substring(0,2).toUpperCase()}</div></div>
+            <div class="space-y-1 flex flex-col items-start">
+                <div class="bg-surface-container-high p-4 rounded-2xl rounded-bl-none shadow-sm text-sm">${htmlContent}</div>
+                <span class="text-[10px] text-on-surface-variant pl-1">${displaySender} &bull; ${timeString}</span>
+            </div>
+        `;
+    }
+    return div;
+}
+
+// fetchOlder decides if we are scrolling UP for history, or polling DOWN for new messages
+async function loadMessages(fetchOlder = false) {
+    if (!currentChat || typeof marked === 'undefined' || isFetchingMessages) return;
+    isFetchingMessages = true;
+
+    try {
+        let url = `/api/messages/${encodeURIComponent(currentChat)}`;
+        
+        // Setup pagination query string safely
+        const params = new URLSearchParams();
+        if (fetchOlder && oldestMsgTime) params.append('before', oldestMsgTime);
+        if (!fetchOlder && newestMsgTime) params.append('after', newestMsgTime);
+        
+        const qs = params.toString();
+        if (qs) url += `?${qs}`;
+
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
+        
+        let data = await res.json();
+        
+        // Safety check: Ensure we are dealing with an array, even if the backend wrapped it like { "messages": [...] }
+        let msgs = Array.isArray(data) ? data : (data.messages || data.data || []);
+        
+        if (!Array.isArray(msgs) || msgs.length === 0) return;
+
+        // Sort messages chronologically by timestamp
+        msgs.sort((a, b) => a.time - b.time);
+
+        const container = document.getElementById('messages');
+        const prevScrollHeight = container.scrollHeight;
+        const prevScrollTop = container.scrollTop;
+        const isNearBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 100;
+
+        let addedAny = false;
+        let elementsToAdd = [];
+
+        msgs.forEach(m => {
+            // Deduplication Fallback Check - ensures a missing ID doesn't break the set
+            const msgId = m.id || `${m.time}-${m.text}`;
+            if (loadedMessageIds.has(msgId)) return;
+            
+            loadedMessageIds.add(msgId);
+            addedAny = true;
+
+            // Update Time Cursors
+            if (!oldestMsgTime || m.time < oldestMsgTime) oldestMsgTime = m.time;
+            if (!newestMsgTime || m.time > newestMsgTime) newestMsgTime = m.time;
+
+            elementsToAdd.push(createMessageElement(m));
+        });
+
+        if (addedAny) {
+            if (fetchOlder) {
+                // PREPEND: Add older messages to the top
+                elementsToAdd.reverse().forEach(el => container.insertBefore(el, container.firstChild));
+                
+                // ADJUST SCROLL: Offset the height so view doesn't jump
+                container.offsetHeight; // Force layout recalculation
+                container.scrollTop = prevScrollTop + (container.scrollHeight - prevScrollHeight);
+            } else {
+                // APPEND: Add newer messages to the bottom
+                elementsToAdd.forEach(el => container.appendChild(el));
+                
+                // SCROLL TO BOTTOM: Only if user was near the bottom
+                if (isNearBottom || prevScrollHeight === 0) {
+                    container.scrollTop = container.scrollHeight;
+                }
+            }
+        }
+    } catch (err) {
+        console.error("Error loading messages:", err);
+    } finally {
+        isFetchingMessages = false;
     }
 }
+
 
 async function sendMessage() {
     const input = document.getElementById('msg-input').value;
@@ -225,11 +311,32 @@ async function handleFileUpload() {
 }
 
 // Initialization
-applySettings(); // Load settings immediately on boot
+applySettings(); 
 function initApp() {
     if (typeof marked !== 'undefined') {
         marked.setOptions({ gfm: true, breaks: true });
-        setInterval(() => { if (document.getElementById('view-chat').classList.contains('opacity-0') === false) { loadChats(); if (currentChat) loadMessages(); } }, 1000);
+        
+        // Add scroll listener for Infinite Pagination (Scroll Up)
+        const msgContainer = document.getElementById('messages');
+        if(msgContainer) {
+            msgContainer.addEventListener('scroll', () => {
+                // If user scrolls within 50px of the top, fetch older messages
+                if (msgContainer.scrollTop <= 50) {
+                    loadMessages(true);
+                }
+            });
+        }
+
+        // Standard polling for NEW messages
+        setInterval(() => { 
+            if (document.getElementById('view-chat').classList.contains('opacity-0') === false) { 
+                loadChats(); 
+                if (currentChat) loadMessages(false); 
+            } 
+        }, 1000);
+        
         loadChats();
-    } else { setTimeout(initApp, 100); }
+    } else { 
+        setTimeout(initApp, 100); 
+    }
 }

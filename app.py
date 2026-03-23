@@ -183,6 +183,11 @@ def index():
     if 'username' not in session: return redirect(url_for('login'))
     return render_template('index.html', user=session['username'])
 
+@app.route("/api/GetLocalName")
+def index():
+    if 'username' not in session: return redirect(url_for('login'))
+    return f'"username":"{session['username']}'
+
 #media stuff
 @app.route("/media/proxy")
 def media_proxy():
