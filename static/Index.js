@@ -3,7 +3,7 @@ let currentChat = null;
 let lastMsgCount = 0;
 let isAtBottom = true;
 
-const defaultDisplayName = '{{ user.split("@")[0] }}';
+
 marked.setOptions({ gfm: true, breaks: true, headerIds: false, mangle: false });
 
 // --- SETTINGS STATE LOGIC ---

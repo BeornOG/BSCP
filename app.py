@@ -7,6 +7,7 @@ import os, re, markdown, hashlib
 from flask import send_from_directory, url_for
 from werkzeug.utils import secure_filename
 import mimetypes
+from datetime import datetime
 
 # Config & Logging
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -70,19 +71,44 @@ def get_chats():
     partners = set([s[0] for s in senders] + [r[0] for r in receivers])
     return jsonify(list(partners))
 
-@app.route("/api/messages/<path:partner>")
-def get_messages(partner):
+@app.route("/api/messages/<path:target>")
+def get_messages(target):
     if 'username' not in session: return "Unauthorized", 401
     me = session['username']
-    msgs = Message.query.filter(
-        ((Message.sender == me) & (Message.receiver == partner)) |
-        ((Message.sender == partner) & (Message.receiver == me))
-    ).order_by(Message.timestamp.asc()).all()
+
+    since = request.args.get("since")   # Get messages AFTER this time
+    before = request.args.get("before") # Get messages BEFORE this time (for history)
+    limit = request.args.get("limit", type=int, default=50)
+
+    # BRANCH: Channel Server (External)
+    if "#" in target:
+        target_domain = target.split('#')[0]
+        channel_url = f"http://{target_domain}/api/channel/poll"
+        params = {"path": target, "limit": limit, "since": since, "before": before}
+        try:
+            return jsonify(requests.get(channel_url, params=params).json())
+        except:
+            return jsonify([]), 500
+    
+    query = Message.query.filter(
+        ((Message.sender == me) & (Message.receiver == target)) |
+        ((Message.sender == target) & (Message.receiver == me))
+    )
+
+    if since:
+        # Convert epoch back to datetime for SQLAlchemy
+        query = query.filter(Message.timestamp > datetime.fromtimestamp(since))
+    if before:
+        query = query.filter(Message.timestamp < datetime.fromtimestamp(before))
+
+    msgs = query.order_by(Message.timestamp.desc()).limit(limit).all()
     
     return jsonify([{
-        "id": m.id, "sender": m.sender, "text": m.text, 
-        "time": m.timestamp
-    } for m in msgs])
+        "id": m.id, 
+        "sender": m.sender, 
+        "text": m.text, 
+        "time": m.timestamp.timestamp() # Sends as Unix Epoch (float)
+    } for m in reversed(msgs)])
 
 @app.route("/api/sendmessage", methods=["POST"])
 def send_message():
@@ -139,6 +165,7 @@ def receive_message():
 
 @app.route("/federation/validate")
 def validate_message():
+    print(request.args.get("messageId"))
     msg = Message.query.get(request.args.get("messageId"))
     if msg and msg.validation_key == request.args.get("validationKey"):
         return jsonify({"valid": True})

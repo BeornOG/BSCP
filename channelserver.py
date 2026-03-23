@@ -1,4 +1,4 @@
-import os, sys, uuid
+import os, sys, uuid, requests, os
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
@@ -32,10 +32,12 @@ with app.app_context():
 def receive_from_user_server():
     data = request.json
     sender_domain = data['sender'].split('@')[-1]
+    print(sender_domain)
     val_params = {"messageId": data['id'], "validationKey": data['validationKey']}
-    
+    print(val_params)
     try:
         val_resp = requests.get(f"http://{sender_domain}/federation/validate", params=val_params, timeout=3)
+        print(val_resp)
         if val_resp.json().get("valid"):
             full_id = f"{DOMAIN}/message/{data['id']}"
             new_msg = ChannelMessage(
@@ -76,7 +78,7 @@ def poll_messages():
         "id": m.id, 
         "sender": m.sender, 
         "text": m.text, 
-        "time": m.timestamp.isoformat()
+        "time": m.timestamp.timestamp()
     } for m in reversed(msgs)])
 
 if __name__ == "__main__":
