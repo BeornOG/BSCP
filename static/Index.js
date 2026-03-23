@@ -1,5 +1,6 @@
 // --- APP STATE & MESSAGING LOGIC ---
 let currentChat = null;
+let chatSessionId = 0; // NEW: Tracks the active chat to prevent data bleed
 let loadedMessageIds = new Set();
 let oldestMsgTime = null;
 let newestMsgTime = null;
@@ -130,6 +131,8 @@ async function loadChats() {
 
 function selectChat(chat) {
     currentChat = chat; 
+    chatSessionId++; // Invalidate any pending network requests from the previous chat
+    isFetchingMessages = false; // Force unlock so the new chat loads instantly
     loadedMessageIds.clear();
     oldestMsgTime = null;
     newestMsgTime = null;
@@ -195,10 +198,12 @@ async function loadMessages(fetchOlder = false) {
     if (!currentChat || typeof marked === 'undefined' || isFetchingMessages) return;
     isFetchingMessages = true;
 
+    const mySession = chatSessionId; // Capture the session at the start of the fetch
+    const requestedChat = currentChat;
+
     try {
-        let url = `/api/messages/${encodeURIComponent(currentChat)}`;
+        let url = `/api/messages/${encodeURIComponent(requestedChat)}`;
         
-        // Setup pagination query string safely
         const params = new URLSearchParams();
         if (fetchOlder && oldestMsgTime) params.append('before', oldestMsgTime);
         if (!fetchOlder && newestMsgTime) params.append('after', newestMsgTime);
@@ -207,16 +212,20 @@ async function loadMessages(fetchOlder = false) {
         if (qs) url += `?${qs}`;
 
         const res = await fetch(url);
+        
+        // RACE CONDITION CHECK: Did the user switch chats while waiting for the network?
+        if (chatSessionId !== mySession) return; 
+
         if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
         
         let data = await res.json();
         
-        // Safety check: Ensure we are dealing with an array, even if the backend wrapped it like { "messages": [...] }
+        // DOUBLE CHECK: Just in case JSON parsing was delayed
+        if (chatSessionId !== mySession) return;
+
         let msgs = Array.isArray(data) ? data : (data.messages || data.data || []);
-        
         if (!Array.isArray(msgs) || msgs.length === 0) return;
 
-        // Sort messages chronologically by timestamp
         msgs.sort((a, b) => a.time - b.time);
 
         const container = document.getElementById('messages');
@@ -228,14 +237,12 @@ async function loadMessages(fetchOlder = false) {
         let elementsToAdd = [];
 
         msgs.forEach(m => {
-            // Deduplication Fallback Check - ensures a missing ID doesn't break the set
             const msgId = m.id || `${m.time}-${m.text}`;
             if (loadedMessageIds.has(msgId)) return;
             
             loadedMessageIds.add(msgId);
             addedAny = true;
 
-            // Update Time Cursors
             if (!oldestMsgTime || m.time < oldestMsgTime) oldestMsgTime = m.time;
             if (!newestMsgTime || m.time > newestMsgTime) newestMsgTime = m.time;
 
@@ -244,26 +251,22 @@ async function loadMessages(fetchOlder = false) {
 
         if (addedAny) {
             if (fetchOlder) {
-                // PREPEND: Add older messages to the top
                 elementsToAdd.reverse().forEach(el => container.insertBefore(el, container.firstChild));
-                
-                // ADJUST SCROLL: Offset the height so view doesn't jump
                 container.offsetHeight; // Force layout recalculation
                 container.scrollTop = prevScrollTop + (container.scrollHeight - prevScrollHeight);
             } else {
-                // APPEND: Add newer messages to the bottom
                 elementsToAdd.forEach(el => container.appendChild(el));
-                
-                // SCROLL TO BOTTOM: Only if user was near the bottom
                 if (isNearBottom || prevScrollHeight === 0) {
                     container.scrollTop = container.scrollHeight;
                 }
             }
         }
     } catch (err) {
-        console.error("Error loading messages:", err);
+        // Only log errors if we are still in the chat that caused them
+        if (chatSessionId === mySession) console.error("Error loading messages:", err);
     } finally {
-        isFetchingMessages = false;
+        // Only release the lock if we are still in the same chat
+        if (chatSessionId === mySession) isFetchingMessages = false;
     }
 }
 
