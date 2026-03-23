@@ -1,4 +1,4 @@
-import sys, uuid, requests, os
+import sys, uuid, requests, os, io
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for, send_file, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
@@ -7,6 +7,7 @@ import os, re, markdown, hashlib
 from flask import send_from_directory, url_for
 from werkzeug.utils import secure_filename
 import mimetypes
+
 
 # Config & Logging
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -28,7 +29,7 @@ if not os.path.exists(CACHE_DIR):
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-print(f"--- Node Configuration ---")
+print(f"--- UserNode Configuration ---")
 print(f"Configuratie: {env_file}")
 print(f"Domain:       {DOMAIN}")
 print(f"Port:         {PORT}")
@@ -70,19 +71,44 @@ def get_chats():
     partners = set([s[0] for s in senders] + [r[0] for r in receivers])
     return jsonify(list(partners))
 
-@app.route("/api/messages/<path:partner>")
-def get_messages(partner):
+@app.route("/api/messages/<path:target>")
+def get_messages(target):
     if 'username' not in session: return "Unauthorized", 401
     me = session['username']
-    msgs = Message.query.filter(
-        ((Message.sender == me) & (Message.receiver == partner)) |
-        ((Message.sender == partner) & (Message.receiver == me))
-    ).order_by(Message.timestamp.asc()).all()
+
+    since = request.args.get("since", type=float)    # Get messages AFTER this time
+    before = request.args.get("before", type=float)  # Get messages BEFORE this time (for history)
+    limit = request.args.get("limit", type=int, default=50)
+
+    # BRANCH: Channel Server (External)
+    if "#" in target:
+        target_domain = target.split('#')[0]
+        channel_url = f"http://{target_domain}/api/channel/poll"
+        params = {"path": target, "limit": limit, "since": since, "before": before}
+        try:
+            return jsonify(requests.get(channel_url, params=params).json())
+        except:
+            return jsonify([]), 500
+    
+    query = Message.query.filter(
+        ((Message.sender == me) & (Message.receiver == target)) |
+        ((Message.sender == target) & (Message.receiver == me))
+    )
+
+    if since:
+        # Convert epoch back to datetime for SQLAlchemy
+        query = query.filter(Message.timestamp > datetime.fromtimestamp(since))
+    if before:
+        query = query.filter(Message.timestamp < datetime.fromtimestamp(before))
+
+    msgs = query.order_by(Message.timestamp.desc()).limit(limit).all()
     
     return jsonify([{
-        "id": m.id, "sender": m.sender, "text": m.text, 
-        "time": m.timestamp.strftime("%H:%M")
-    } for m in msgs])
+        "id": m.id, 
+        "sender": m.sender, 
+        "text": m.text, 
+        "time": m.timestamp.timestamp() # Sends as Unix Epoch (float)
+    } for m in reversed(msgs)])
 
 @app.route("/api/sendmessage", methods=["POST"])
 def send_message():
@@ -91,21 +117,35 @@ def send_message():
     msg_uuid = str(uuid.uuid4())
     full_id = f"{DOMAIN}/{msg_uuid}" # Unieke ID over federatie heen
     val_key = "key-" + msg_uuid[:8]
-
     new_msg = Message(id=full_id, sender=session['username'], receiver=data['receiver'], 
                       text=data['messageText'], validation_key=val_key)
     db.session.add(new_msg)
     db.session.commit()
-    
-    target_domain = data['receiver'].split('@')[-1]
-    payload = {"id": full_id, "sender": session['username'], "receiver": data['receiver'], 
-               "text": data['messageText'], "validationKey": val_key}
-    
-    try:
-        requests.post(f"http://{target_domain}/federation/receive", json=payload, timeout=3)
-        return jsonify({"status": "Sent"})
-    except:
-        return jsonify({"error": "Offline"}), 500
+    receiver = data['receiver'] # e.g. "domain.com#general#news"
+
+    # --- CHANNEL LOGIC ---
+    if "#" in receiver:
+        target_domain = receiver.split('#')[0]
+        payload = {"id": full_id, "sender": session['username'], "receiver": receiver, 
+                   "text": data['messageText'], "validationKey": val_key}
+        try:
+            # Assuming channel server runs on a known port or same domain
+            requests.post(f"http://{target_domain}/api/channel/send", json=payload, timeout=3)
+            return jsonify({"status": "Sent to Channel"})
+        except:
+            return jsonify({"error": "Channel Server Offline"}), 500
+    else:
+        
+
+        target_domain = receiver.split('@')[-1]
+        payload = {"id": full_id, "sender": session['username'], "receiver": receiver, 
+                   "text": data['messageText'], "validationKey": val_key}
+
+        try:
+            requests.post(f"http://{target_domain}/federation/receive", json=payload, timeout=3)
+            return jsonify({"status": "Sent"})
+        except:
+            return jsonify({"error": "Offline"}), 500
 
 @app.route("/federation/receive", methods=["POST"])
 def receive_message():
@@ -125,6 +165,7 @@ def receive_message():
 
 @app.route("/federation/validate")
 def validate_message():
+    print(request.args.get("messageId"))
     msg = Message.query.get(request.args.get("messageId"))
     if msg and msg.validation_key == request.args.get("validationKey"):
         return jsonify({"valid": True})
@@ -141,6 +182,11 @@ def login():
 def index():
     if 'username' not in session: return redirect(url_for('login'))
     return render_template('index.html', user=session['username'])
+
+#@app.route("/api/GetLocalName")
+#def index():
+    #if 'username' not in session: return redirect(url_for('login'))
+    #return f'"username":"{session['username']}'
 
 #media stuff
 @app.route("/media/proxy")
