@@ -12,7 +12,8 @@ web_bp = Blueprint('web', __name__)
 def index():
     if not hasattr(request, 'user') or request.user is None:
         return redirect(url_for('web.login'))
-    return render_template('index.html', user=request.user.username)
+    from app import DOMAIN
+    return render_template('index.html', user=request.user.username, domain=DOMAIN)
 
 @web_bp.route("/login", methods=["GET", "POST"])
 def login():

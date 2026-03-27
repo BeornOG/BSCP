@@ -114,10 +114,32 @@ def get_chats():
     if not hasattr(request, 'user') or request.user is None:
         return "Unauthorized", 401
     me = request.user.username
-    # Zoek alle unieke gesprekspartners
-    senders = db.session.query(Message.sender).filter(Message.receiver == me).distinct()
-    receivers = db.session.query(Message.receiver).filter(Message.sender == me).distinct()
-    partners = set([s[0] for s in senders] + [r[0] for r in receivers])
+
+    # Find all users I've communicated with
+    from sqlalchemy import or_
+
+    # Messages where I'm the sender (sender starts with me@)
+    sent_to = db.session.query(Message.receiver).filter(
+        Message.sender.ilike(f"{me}@%")
+    ).distinct()
+
+    # Messages where I'm the receiver (receiver starts with me@)
+    received_from = db.session.query(Message.sender).filter(
+        Message.receiver.ilike(f"{me}@%")
+    ).distinct()
+
+    partners = set()
+
+    # Add senders of messages I received (always have domain now)
+    for sender in received_from:
+        sender_name = sender[0]
+        partners.add(sender_name)
+
+    # Add receivers of messages I sent (always have domain now)
+    for receiver in sent_to:
+        receiver_name = receiver[0]
+        partners.add(receiver_name)
+
     return jsonify(list(partners))
 
 @app.route("/api/messages/<path:target>")
@@ -141,24 +163,36 @@ def get_messages(target):
             return jsonify(requests.get(channel_url, params=params).json())
         except:
             return jsonify([]), 500
-    
+
+    # Query for direct messages - both sender and receiver always include domain
+    from sqlalchemy import or_
+
+    # Build target with domain if not already present
+    target_with_domain = f"{target}@{DOMAIN}" if '@' not in target else target
+
     query = Message.query.filter(
-        ((Message.sender == me) & (Message.receiver == target)) |
+        #or_(
+            # Messages I sent (my domain sender, target receiver)
+            #(Message.sender.ilike(f"{me}@%")) & (Message.receiver.ilike(f"{target}@%")),
+            # Messages I received (target sender, my domain receiver)
+            (#Message.sender.ilike(f"{target}@%")) & (Message.receiver.ilike(f"{me}@%"))
+                ((Message.sender == me) & (Message.receiver == target)) |
         ((Message.sender == target) & (Message.receiver == me))
+        )
+        
     )
 
     if since:
-        # Convert epoch back to datetime for SQLAlchemy
         query = query.filter(Message.timestamp > datetime.fromtimestamp(since))
     if before:
         query = query.filter(Message.timestamp < datetime.fromtimestamp(before))
 
-    msgs = query.order_by(Message.timestamp.desc()).limit(limit).all()
-    
+    msgs = query.order_by(Message.timestamp.desc()).limit(limit).all()    
+
     return jsonify([{
-        "id": m.id, 
-        "sender": m.sender, 
-        "text": m.text, 
+        "id": m.id,
+        "sender": m.sender,
+        "text": m.text,
         "time": m.timestamp.timestamp() # Sends as Unix Epoch (float)
     } for m in reversed(msgs)])
 
@@ -170,11 +204,20 @@ def send_message():
     msg_uuid = str(uuid.uuid4())
     full_id = f"{DOMAIN}/{msg_uuid}" # Unieke ID over federatie heen
     val_key = "key-" + msg_uuid[:8]
-    new_msg = Message(id=full_id, sender=request.user.username, receiver=data['receiver'], 
+
+    # Normalize receiver to always include domain
+    receiver = data['receiver']
+    if '@' not in receiver:
+        # Local message - add our domain
+        receiver_normalized = f"{receiver}@{DOMAIN}"
+    else:
+        # Remote message - already has domain
+        receiver_normalized = receiver
+
+    new_msg = Message(id=full_id, sender=f"{request.user.username}@{DOMAIN}", receiver=receiver_normalized,
                       text=data['messageText'], validation_key=val_key)
     db.session.add(new_msg)
     db.session.commit()
-    receiver = data['receiver'] # e.g. "domain.com#general#news"
 
     # --- CHANNEL LOGIC ---
     if "#" in receiver:
@@ -182,7 +225,7 @@ def send_message():
         channel_url = get_endpoint(target_domain, "channelserver", "channel_send")
         if not channel_url:
             channel_url = f"http://{target_domain}/api/channel/send"  # Fallback
-        payload = {"id": full_id, "sender": request.user.username, "receiver": receiver,
+        payload = {"id": full_id, "sender": f"{request.user.username}@{DOMAIN}", "receiver": receiver,
                    "text": data['messageText'], "validationKey": val_key}
         try:
             requests.post(channel_url, json=payload, timeout=3)
@@ -190,10 +233,13 @@ def send_message():
         except:
             return jsonify({"error": "Channel Server Offline"}), 500
     else:
-        
-
-        target_domain = receiver.split('@')[-1]
-        payload = {"id": full_id, "sender": request.user.username, "receiver": receiver,
+        # Direct message
+        if '@' not in receiver:
+            # Local message - just username
+            target_domain = DOMAIN
+        else:
+            target_domain = receiver.split('@')[-1]
+        payload = {"id": full_id, "sender": f"{request.user.username}@{DOMAIN}", "receiver": receiver_normalized,
                    "text": data['messageText'], "validationKey": val_key}
         Send_URL = get_endpoint(target_domain, "userserver", "federation_receive")
 
@@ -204,7 +250,7 @@ def send_message():
             requests.post(Send_URL, json=payload, timeout=5)
             return jsonify({"status": "Sent"})
         except Exception as e:
-            print(f"Validation error: {e}")            
+            print(f"Validation error: {e}")
             return jsonify({"error": "Offline"}), 500
 
 @app.route("/media/proxy")
@@ -255,6 +301,7 @@ def serve_upload(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 @app.route("/.well-known/BSCP/userserver")
+@app.route("/.well-known/BSCP/userserver.json")
 def serve_userserver_config():
     """Serve BSCP userserver configuration in JSON format"""
     config = {

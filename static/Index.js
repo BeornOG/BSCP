@@ -168,12 +168,15 @@ function selectChat(chat) {
 }
 
 function createMessageElement(m) {
-    const isMe = m.sender === currentUser;
-    
+    // Handle sender format (could be "user" or "user@domain")
+    const mSenderUsername = m.sender ? m.sender.split('@')[0] : "Unknown";
+    const currentUsername = currentUser.split('@')[0];
+    const isMe = mSenderUsername === currentUsername;
+
     // Safety Fallbacks: Prevents fatal errors if the database has a null text/sender row
-    const safeText = m.text || ""; 
-    const safeSender = m.sender ? m.sender.split('@')[0] : "Unknown";
-    
+    const safeText = m.text || "";
+    const safeSender = mSenderUsername;
+
     let htmlContent = marked.parse(safeText);
 
     // Proxy images logic

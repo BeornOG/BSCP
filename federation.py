@@ -13,22 +13,41 @@ def receive_message():
         from app import Message
         db = current_app.extensions['sqlalchemy']
         data = request.json
+        print(f"[FEDERATION] Received message: {data}")
+
+        if '@' not in data['sender']:
+            print(f"[FEDERATION] Invalid sender format: {data['sender']}")
+            return "Invalid sender format", 400
+
         sender_domain = data['sender'].split('@')[-1]
         val_params = {"messageId": data['id'], "validationKey": data['validationKey']}
         val_url = get_endpoint(sender_domain, "userserver", "federation_validate")
 
         if not val_url:
             val_url = f"http://{sender_domain}/federation/validate"  # Fallback
+        print(f"[FEDERATION] Validating at: {val_url}")
 
         try:
             val_resp = requests.get(val_url, params=val_params, timeout=3)
+            print(f"[FEDERATION] Validation response: {val_resp.status_code} - {val_resp.text}")
             if val_resp.json().get("valid"):
-                received = Message(id=data['id'], sender=data['sender'], receiver=data['receiver'], text=data['text'])
+                # Keep receiver with domain (sender already normalized it)
+                received = Message(id=data['id'], sender=data['sender'], receiver=data['receiver'], text=data['text'], validation_key=data.get('validationKey'))
+                print(f"[FEDERATION] Saving message: sender={received.sender}, receiver={received.receiver}")
                 db.session.add(received)
                 db.session.commit()
+                print(f"[FEDERATION] Message saved successfully")
                 return "OK", 200
-        except: pass
-    except: pass
+            else:
+                print(f"[FEDERATION] Validation failed")
+        except Exception as e:
+            print(f"[FEDERATION] Validation error: {e}")
+            import traceback
+            traceback.print_exc()
+    except Exception as e:
+        print(f"[FEDERATION] Error: {e}")
+        import traceback
+        traceback.print_exc()
     return "Invalid", 401
 
 
