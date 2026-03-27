@@ -170,17 +170,17 @@ def get_messages(target):
     # Build target with domain if not already present
     target_with_domain = f"{target}@{DOMAIN}" if '@' not in target else target
 
-    print(f"\n[MESSAGES DEBUG] Querying for user '{me}' talking to '{target}'")
-    print(f"[MESSAGES DEBUG] Target normalized to: '{target_with_domain}'")
-    print(f"[MESSAGES DEBUG] Looking for:")
-    print(f"[MESSAGES DEBUG]   - Sent: sender starts with '{me}@' AND receiver == '{target_with_domain}'")
-    print(f"[MESSAGES DEBUG]   - Received: sender == '{target_with_domain}' AND receiver starts with '{me}@'")
+    # print(f"\n[MESSAGES DEBUG] Querying for user '{me}' talking to '{target}'")
+    # print(f"[MESSAGES DEBUG] Target normalized to: '{target_with_domain}'")
+    # print(f"[MESSAGES DEBUG] Looking for:")
+    # print(f"[MESSAGES DEBUG]   - Sent: sender starts with '{me}@' AND receiver == '{target_with_domain}'")
+    # print(f"[MESSAGES DEBUG]   - Received: sender == '{target_with_domain}' AND receiver starts with '{me}@'")
 
     # First, check what's actually in the database
-    all_messages = db.session.query(Message).all()
-    print(f"[MESSAGES DEBUG] Total messages in database: {len(all_messages)}")
-    for m in all_messages:
-        print(f"[MESSAGES DEBUG]   - ID: {m.id}, Sender: {m.sender}, Receiver: {m.receiver}")
+    # all_messages = db.session.query(Message).all()
+    # print(f"[MESSAGES DEBUG] Total messages in database: {len(all_messages)}")
+    # for m in all_messages:
+    #     print(f"[MESSAGES DEBUG]   - ID: {m.id}, Sender: {m.sender}, Receiver: {m.receiver}")
 
     # Build all possible variations of the target name for matching
     target_variations = [target_with_domain, target]  # e.g., ["bob@localhost:5000", "bob"]
@@ -205,10 +205,10 @@ def get_messages(target):
 
     msgs = query.order_by(Message.timestamp.desc()).limit(limit).all()
 
-    print(f"[MESSAGES] Query for user '{me}' talking to '{target}' (normalized to '{target_with_domain}')")
-    print(f"[MESSAGES] Found {len(msgs)} messages")
-    for m in msgs:
-        print(f"  - {m.sender} -> {m.receiver}: {m.text[:50] if m.text else 'NO TEXT'}")
+    #print(f"[MESSAGES] Query for user '{me}' talking to '{target}' (normalized to '{target_with_domain}')")
+    #print(f"[MESSAGES] Found {len(msgs)} messages")
+    #for m in msgs:
+        #print(f"  - {m.sender} -> {m.receiver}: {m.text[:50] if m.text else 'NO TEXT'}")
 
     return jsonify([{
         "id": m.id,
