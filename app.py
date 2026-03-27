@@ -170,24 +170,45 @@ def get_messages(target):
     # Build target with domain if not already present
     target_with_domain = f"{target}@{DOMAIN}" if '@' not in target else target
 
-    query = Message.query.filter(
-        #or_(
-            # Messages I sent (my domain sender, target receiver)
-            #(Message.sender.ilike(f"{me}@%")) & (Message.receiver.ilike(f"{target}@%")),
-            # Messages I received (target sender, my domain receiver)
-            (#Message.sender.ilike(f"{target}@%")) & (Message.receiver.ilike(f"{me}@%"))
-                ((Message.sender == me) & (Message.receiver == target)) |
-        ((Message.sender == target) & (Message.receiver == me))
-        )
-        
+    print(f"\n[MESSAGES DEBUG] Querying for user '{me}' talking to '{target}'")
+    print(f"[MESSAGES DEBUG] Target normalized to: '{target_with_domain}'")
+    print(f"[MESSAGES DEBUG] Looking for:")
+    print(f"[MESSAGES DEBUG]   - Sent: sender starts with '{me}@' AND receiver == '{target_with_domain}'")
+    print(f"[MESSAGES DEBUG]   - Received: sender == '{target_with_domain}' AND receiver starts with '{me}@'")
+
+    # First, check what's actually in the database
+    all_messages = db.session.query(Message).all()
+    print(f"[MESSAGES DEBUG] Total messages in database: {len(all_messages)}")
+    for m in all_messages:
+        print(f"[MESSAGES DEBUG]   - ID: {m.id}, Sender: {m.sender}, Receiver: {m.receiver}")
+
+    # Build all possible variations of the target name for matching
+    target_variations = [target_with_domain, target]  # e.g., ["bob@localhost:5000", "bob"]
+
+    # Messages where I sent to target
+    sent_condition = (Message.sender.ilike(f"{me}@%")) & (Message.receiver.in_(target_variations))
+
+    # Messages where target sent to me
+    received_condition = (Message.sender.in_(target_variations)) & (Message.receiver.ilike(f"{me}@%"))
+
+    # Also handle case where sender is domain-qualified version of target
+    received_condition = received_condition | (
+        (Message.sender.ilike(f"{target}@%")) & (Message.receiver.ilike(f"{me}@%"))
     )
+
+    query = Message.query.filter(or_(sent_condition, received_condition))
 
     if since:
         query = query.filter(Message.timestamp > datetime.fromtimestamp(since))
     if before:
         query = query.filter(Message.timestamp < datetime.fromtimestamp(before))
 
-    msgs = query.order_by(Message.timestamp.desc()).limit(limit).all()    
+    msgs = query.order_by(Message.timestamp.desc()).limit(limit).all()
+
+    print(f"[MESSAGES] Query for user '{me}' talking to '{target}' (normalized to '{target_with_domain}')")
+    print(f"[MESSAGES] Found {len(msgs)} messages")
+    for m in msgs:
+        print(f"  - {m.sender} -> {m.receiver}: {m.text[:50] if m.text else 'NO TEXT'}")
 
     return jsonify([{
         "id": m.id,
