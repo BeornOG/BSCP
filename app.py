@@ -7,6 +7,9 @@ import os, re, markdown, hashlib
 from flask import send_from_directory, url_for
 from werkzeug.utils import secure_filename
 import mimetypes
+from kdl_discovery import get_endpoint
+from web import web_bp
+from federation import federation_bp
 
 
 # Config & Logging
@@ -16,18 +19,17 @@ load_dotenv(env_file)
 
 PORT = int(os.getenv("PORT", 5000))
 DOMAIN = os.getenv("DOMAIN", f"localhost:{PORT}")
-DB_NAME = os.getenv("DB_NAME", f"database_{PORT}.db")
+DB_NAME = os.path.join(basedir, os.getenv("DB_NAME", "data/userserver.db"))
 SECRET_KEY = os.getenv("SECRET_KEY", "default_secret_key")
-CACHE_DIR = os.getenv("CACHE_DIR", "media_cache")
+CACHE_DIR = os.path.join(basedir, os.getenv("CACHE_DIR", "media_cache"))
 CACHE_TIME = int(os.getenv("CACHE_TIME", 3600)) # in seconden (1 uur)
-UPLOAD_FOLDER = os.getenv("UPLOAD_DIR", "uploads")
-DB_NAME = os.path.join(basedir, DB_NAME)
-UPLOAD_FOLDER = os.path.join(basedir, UPLOAD_FOLDER)
+UPLOAD_FOLDER = os.path.join(basedir, os.getenv("UPLOAD_DIR", "uploads"))
 
-if not os.path.exists(CACHE_DIR):
-    os.makedirs(CACHE_DIR)
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+
+# Create directories if they don't exist
+os.makedirs(os.path.dirname(DB_NAME), exist_ok=True)
+os.makedirs(CACHE_DIR, exist_ok=True)
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 print(f"--- UserNode Configuration ---")
 print(f"Configuratie: {env_file}")
@@ -45,7 +47,12 @@ app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DB_NAME}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Limiet op 16MB
+app.config['DOMAIN'] = DOMAIN
 db = SQLAlchemy(app)
+
+# Register blueprints
+app.register_blueprint(web_bp)
+app.register_blueprint(federation_bp)
 
 class Message(db.Model):
     # ID is nu: domain/uuid om conflicten te voorkomen
@@ -83,7 +90,9 @@ def get_messages(target):
     # BRANCH: Channel Server (External)
     if "#" in target:
         target_domain = target.split('#')[0]
-        channel_url = f"http://{target_domain}/api/channel/poll"
+        channel_url = get_endpoint(target_domain, "channelserver", "channel_poll")
+        if not channel_url:
+            channel_url = f"http://{target_domain}/api/channel/poll"  # Fallback
         params = {"path": target, "limit": limit, "since": since, "before": before}
         try:
             return jsonify(requests.get(channel_url, params=params).json())
@@ -126,11 +135,13 @@ def send_message():
     # --- CHANNEL LOGIC ---
     if "#" in receiver:
         target_domain = receiver.split('#')[0]
-        payload = {"id": full_id, "sender": session['username'], "receiver": receiver, 
+        channel_url = get_endpoint(target_domain, "channelserver", "channel_send")
+        if not channel_url:
+            channel_url = f"http://{target_domain}/api/channel/send"  # Fallback
+        payload = {"id": full_id, "sender": session['username'], "receiver": receiver,
                    "text": data['messageText'], "validationKey": val_key}
         try:
-            # Assuming channel server runs on a known port or same domain
-            requests.post(f"http://{target_domain}/api/channel/send", json=payload, timeout=3)
+            requests.post(channel_url, json=payload, timeout=3)
             return jsonify({"status": "Sent to Channel"})
         except:
             return jsonify({"error": "Channel Server Offline"}), 500
@@ -147,48 +158,6 @@ def send_message():
         except:
             return jsonify({"error": "Offline"}), 500
 
-@app.route("/federation/receive", methods=["POST"])
-def receive_message():
-    data = request.json
-    sender_domain = data['sender'].split('@')[-1]
-    val_params = {"messageId": data['id'], "validationKey": data['validationKey']}
-    
-    try:
-        val_resp = requests.get(f"http://{sender_domain}/federation/validate", params=val_params, timeout=3)
-        if val_resp.json().get("valid"):
-            received = Message(id=data['id'], sender=data['sender'], receiver=data['receiver'], text=data['text'])
-            db.session.add(received)
-            db.session.commit()
-            return "OK", 200
-    except: pass
-    return "Invalid", 401
-
-@app.route("/federation/validate")
-def validate_message():
-    print(request.args.get("messageId"))
-    msg = Message.query.get(request.args.get("messageId"))
-    if msg and msg.validation_key == request.args.get("validationKey"):
-        return jsonify({"valid": True})
-    return jsonify({"valid": False})
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        session['username'] = f"{request.form['user']}@{DOMAIN}"
-        return redirect(url_for('index'))
-    return '<body style="background:#121212;color:white;display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;"><form method="post"><h1>Login</h1><input name="user" placeholder="username" required><button>Enter</button></form></body>'
-
-@app.route("/")
-def index():
-    if 'username' not in session: return redirect(url_for('login'))
-    return render_template('index.html', user=session['username'])
-
-#@app.route("/api/GetLocalName")
-#def index():
-    #if 'username' not in session: return redirect(url_for('login'))
-    #return f'"username":"{session['username']}'
-
-#media stuff
 @app.route("/media/proxy")
 def media_proxy():
     url = request.args.get("url")
@@ -235,6 +204,37 @@ def upload_file():
 @app.route("/uploads/<filename>")
 def serve_upload(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route("/.well-known/BSCP/userserver.kdl")
+def serve_userserver_config():
+    kdl_content = f"""server {{
+    name "BSCP User Server"
+    version "1.0"
+    type "userserver"
+}}
+
+api {{
+    base "http://{DOMAIN}"
+
+    endpoints {{
+        chats "/api/chats"
+        messages "/api/messages"
+        send_message "/api/sendmessage"
+        federation_receive "/federation/receive"
+        federation_validate "/federation/validate"
+        upload "/api/upload"
+        media_proxy "/media/proxy"
+    }}
+}}
+
+capabilities {{
+    federation true
+    channels false
+    direct_messaging true
+    media_upload true
+}}
+"""
+    return kdl_content, 200, {"Content-Type": "application/kdl; charset=utf-8"}
 
 if __name__ == "__main__":
     app.run(port=PORT)

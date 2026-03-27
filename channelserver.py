@@ -3,15 +3,18 @@ from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from dotenv import load_dotenv
+from kdl_discovery import get_endpoint
 
 # --- Config ---
 basedir = os.path.abspath(os.path.dirname(__file__))
 env_file = sys.argv[1] if len(sys.argv) > 1 else ".env"
 load_dotenv(env_file)
 PORT = int(os.getenv("CH_PORT", 6000))
-DB_NAME = os.getenv("DB_NAME", f"database_{PORT}.db")
+DB_NAME = os.path.join(basedir, os.getenv("CH_DB_NAME", "data/channelserver.db"))
 DOMAIN = os.getenv("DOMAIN", f"localhost:{PORT}")
-DB_NAME = os.path.join(basedir, DB_NAME)
+
+# Create data directory if it doesn't exist
+os.makedirs(os.path.dirname(DB_NAME), exist_ok=True)
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DB_NAME}'
@@ -32,24 +35,27 @@ with app.app_context():
 def receive_from_user_server():
     data = request.json
     sender_domain = data['sender'].split('@')[-1]
-    print(sender_domain)
     val_params = {"messageId": data['id'], "validationKey": data['validationKey']}
-    print(val_params)
+
+    val_url = get_endpoint(sender_domain, "userserver", "federation_validate")
+    if not val_url:
+        val_url = f"http://{sender_domain}/federation/validate"  # Fallback
+
     try:
-        val_resp = requests.get(f"http://{sender_domain}/federation/validate", params=val_params, timeout=3)
-        print(val_resp)
+        val_resp = requests.get(val_url, params=val_params, timeout=3)
         if val_resp.json().get("valid"):
             full_id = f"{DOMAIN}/message/{data['id']}"
             new_msg = ChannelMessage(
-                id = full_id,
-            channel_path=data['receiver'],
-            sender=data['sender'],
-            text=data['text']
+                id=full_id,
+                channel_path=data['receiver'],
+                sender=data['sender'],
+                text=data['text']
             )
             db.session.add(new_msg)
             db.session.commit()
             return jsonify({"status": "stored", "id": new_msg.id})
-    except: pass
+    except:
+        pass
     return "Invalid", 401
     
 
@@ -57,8 +63,8 @@ def receive_from_user_server():
 def poll_messages():
     path = request.args.get("path")
     limit = request.args.get("limit", type=int, default=50)
-    since = request.args.get("since" type=float)   # UTC epoch
-    before = request.args.get("before" type=float) # Voor historiek opvragen
+    since = request.args.get("since", type=float)   # UTC epoch
+    before = request.args.get("before", type=float) # Voor historiek opvragen
 
     query = ChannelMessage.query.filter(ChannelMessage.channel_path == path)
 
@@ -73,11 +79,37 @@ def poll_messages():
     
     # Keer de lijst om voor chronologische weergave in de UI
     return jsonify([{
-        "id": m.id, 
-        "sender": m.sender, 
-        "text": m.text, 
+        "id": m.id,
+        "sender": m.sender,
+        "text": m.text,
         "time": m.timestamp.timestamp()
     } for m in reversed(msgs)])
+
+@app.route("/.well-known/BSCP/channelserver.kdl")
+def serve_channelserver_config():
+    kdl_content = f"""server {{
+    name "BSCP Channel Server"
+    version "1.0"
+    type "channelserver"
+}}
+
+api {{
+    base "http://{DOMAIN}"
+
+    endpoints {{
+        channel_send "/api/channel/send"
+        channel_poll "/api/channel/poll"
+    }}
+}}
+
+capabilities {{
+    federation true
+    channels true
+    direct_messaging false
+    media_upload false
+}}
+"""
+    return kdl_content, 200, {"Content-Type": "application/kdl; charset=utf-8"}
 
 if __name__ == "__main__":
     print(f"Channel Server running on port {PORT}")

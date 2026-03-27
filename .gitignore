@@ -1,3 +1,5 @@
 /node-modules
 /Testing/Data
 .env
+/data/
+*.db

@@ -20,7 +20,7 @@ let userSettings = JSON.parse(localStorage.getItem('atelierSettings')) || {
 function applySettings() {
     // Apply Variables
     document.documentElement.style.setProperty('--dynamic-primary', userSettings.accentColor);
-    
+
     // Apply Theme Class
     if(userSettings.theme === 'light') {
         document.body.classList.add('theme-light');
@@ -31,11 +31,23 @@ function applySettings() {
     // Apply Display Name to UI Elements
     document.getElementById('input-display-name').value = userSettings.displayName;
     document.getElementById('settings-display-name-preview').innerText = userSettings.displayName;
-    
+
     // Initials Logic
     const initials = userSettings.displayName.substring(0, 2).toUpperCase();
     document.getElementById('sidebar-avatar').innerText = initials;
     document.getElementById('settings-avatar-preview').innerText = initials;
+
+    // Update theme card visual feedback
+    document.querySelectorAll('.theme-card').forEach(card => {
+        const cardTheme = card.onclick.toString().includes("'light'") ? 'light' : 'dark';
+        if (cardTheme === userSettings.theme) {
+            card.classList.add('border-primary', 'border-2');
+            card.classList.remove('border-transparent');
+        } else {
+            card.classList.remove('border-primary');
+            card.classList.add('border-transparent');
+        }
+    });
 }
 
 
@@ -47,7 +59,19 @@ function updatePreview() {
 
 function selectTheme(theme) {
     userSettings.theme = theme;
-    // Visual feedback on cards can be added here
+    applySettings(); // Apply immediately for live preview
+
+    // Update visual feedback on theme cards
+    document.querySelectorAll('.theme-card').forEach(card => {
+        const cardTheme = card.onclick.toString().includes("'light'") ? 'light' : 'dark';
+        if (cardTheme === theme) {
+            card.classList.add('border-primary', 'border-2');
+            card.classList.remove('border-transparent');
+        } else {
+            card.classList.remove('border-primary');
+            card.classList.add('border-transparent');
+        }
+    });
 }
 
 function selectAccent(hex) {
@@ -314,7 +338,7 @@ async function handleFileUpload() {
 }
 
 // Initialization
-applySettings(); 
+document.addEventListener('DOMContentLoaded', applySettings);
 function initApp() {
     if (typeof marked !== 'undefined') {
         marked.setOptions({ gfm: true, breaks: true });
