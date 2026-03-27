@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="nl">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>BSCP - Login</title>
@@ -16,10 +16,13 @@
     <div class="card">
         <h1>Inloggen</h1>
         <form method="POST" action="{{ url_for('web.login') }}">
-            <input name="user" placeholder="Gebruikersnaam" required autofocus>
-            <input type="password" name="password" placeholder="Wachtwoord" required>
+            <input name="user" placeholder="Username" required autofocus>
+            <input type="password" name="password" placeholder="Password" required>
             <button type="submit">Volgende</button>
         </form>
+        <div style="text-align: center; margin-top: 15px;">
+            <a href="{{ url_for('web.register') }}" style="color: #03dac6; text-decoration: none;">No account? Register</a>
+        </div>
     </div>
 </body>
 </html>

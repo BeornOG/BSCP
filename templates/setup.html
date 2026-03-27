@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>BSCP - First time Setup</title>
+    <style>
+        body { background: #121212; color: white; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
+        .card { background: #1e1e1e; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); width: 100%; max-width: 300px; }
+        h1 { margin-top: 0; font-size: 1.5rem; text-align: center; }
+        .subtitle { text-align: center; color: #aaa; font-size: 0.9rem; margin-bottom: 1.5rem; }
+        input { width: 100%; padding: 10px; margin: 10px 0; border-radius: 4px; border: 1px solid #333; background: #2a2a2a; color: white; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; border: none; border-radius: 4px; background: #03dac6; color: #121212; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        button:hover { background: #04f0d9; }
+        .errors { background: #3d1f1f; border: 1px solid #c0392b; padding: 10px; border-radius: 4px; margin-bottom: 15px; color: #e74c3c; }
+        .errors li { margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>First time Setup</h1>
+        <p class="subtitle">Create an Admin account</p>
+
+        {% if errors %}
+        <div class="errors">
+            <ul>
+                {% for error in errors %}
+                <li>{{ error }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <form method="POST">
+            <input name="username" placeholder="Username" required autofocus>
+            <input name="email" placeholder="Email adress (optional)" type="email">
+            <input type="password" name="password" placeholder="Password" required>
+            <input type="password" name="password_confirm" placeholder="Confirm Password" required>
+            <button type="submit">Create Account</button>
+        </form>
+    </div>
+</body>
+</html>

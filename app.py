@@ -78,9 +78,11 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
+    email = db.Column(db.String(120))
     otp_secret = db.Column(db.String(32), default=pyotp.random_base32)
     is_2fa_enabled = db.Column(db.Boolean, default=False)
-    
+    is_admin = db.Column(db.Boolean, default=False)
+
     # Relatie naar actieve apparaten/sessies
     sessions = db.relationship('UserSession', backref='user', lazy=True, cascade="all, delete-orphan")
 
@@ -92,6 +94,15 @@ class UserSession(db.Model):
     last_active = db.Column(db.DateTime, default=datetime.utcnow)
     expires_at = db.Column(db.DateTime, nullable=False)
 
+class InviteCode(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(64), unique=True, nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    used_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    used_at = db.Column(db.DateTime)
+    expires_at = db.Column(db.DateTime)
+
 
 with app.app_context():
     db.create_all()
@@ -100,8 +111,9 @@ with app.app_context():
 
 @app.route("/api/chats")
 def get_chats():
-    if 'username' not in session: return "Unauthorized", 401
-    me = session['username']
+    if not hasattr(request, 'user') or request.user is None:
+        return "Unauthorized", 401
+    me = request.user.username
     # Zoek alle unieke gesprekspartners
     senders = db.session.query(Message.sender).filter(Message.receiver == me).distinct()
     receivers = db.session.query(Message.receiver).filter(Message.sender == me).distinct()
@@ -110,8 +122,9 @@ def get_chats():
 
 @app.route("/api/messages/<path:target>")
 def get_messages(target):
-    if 'username' not in session: return "Unauthorized", 401
-    me = session['username']
+    if not hasattr(request, 'user') or request.user is None:
+        return "Unauthorized", 401
+    me = request.user.username
 
     since = request.args.get("since", type=float)    # Get messages AFTER this time
     before = request.args.get("before", type=float)  # Get messages BEFORE this time (for history)
@@ -151,12 +164,13 @@ def get_messages(target):
 
 @app.route("/api/sendmessage", methods=["POST"])
 def send_message():
-    if 'username' not in session: return "Unauthorized", 401
+    if not hasattr(request, 'user') or request.user is None:
+        return "Unauthorized", 401
     data = request.json
     msg_uuid = str(uuid.uuid4())
     full_id = f"{DOMAIN}/{msg_uuid}" # Unieke ID over federatie heen
     val_key = "key-" + msg_uuid[:8]
-    new_msg = Message(id=full_id, sender=session['username'], receiver=data['receiver'], 
+    new_msg = Message(id=full_id, sender=request.user.username, receiver=data['receiver'], 
                       text=data['messageText'], validation_key=val_key)
     db.session.add(new_msg)
     db.session.commit()
@@ -168,7 +182,7 @@ def send_message():
         channel_url = get_endpoint(target_domain, "channelserver", "channel_send")
         if not channel_url:
             channel_url = f"http://{target_domain}/api/channel/send"  # Fallback
-        payload = {"id": full_id, "sender": session['username'], "receiver": receiver,
+        payload = {"id": full_id, "sender": request.user.username, "receiver": receiver,
                    "text": data['messageText'], "validationKey": val_key}
         try:
             requests.post(channel_url, json=payload, timeout=3)
@@ -179,7 +193,7 @@ def send_message():
         
 
         target_domain = receiver.split('@')[-1]
-        payload = {"id": full_id, "sender": session['username'], "receiver": receiver,
+        payload = {"id": full_id, "sender": request.user.username, "receiver": receiver,
                    "text": data['messageText'], "validationKey": val_key}
         Send_URL = get_endpoint(target_domain, "userserver", "federation_receive")
 
