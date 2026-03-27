@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <title>BSCP - Login</title>
+    <style>
+        body { background: #121212; color: white; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: #1e1e1e; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); width: 300px; }
+        h1 { margin-top: 0; font-size: 1.5rem; text-align: center; }
+        input { width: 100%; padding: 10px; margin: 10px 0; border-radius: 4px; border: 1px solid #333; background: #2a2a2a; color: white; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; border: none; border-radius: 4px; background: #3700b3; color: white; cursor: pointer; font-weight: bold; }
+        button:hover { background: #4b00ff; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Inloggen</h1>
+        <form method="POST" action="{{ url_for('web.login') }}">
+            <input name="user" placeholder="Gebruikersnaam" required autofocus>
+            <input type="password" name="password" placeholder="Wachtwoord" required>
+            <button type="submit">Volgende</button>
+        </form>
+    </div>
+</body>
+</html>

@@ -8,6 +8,9 @@ import mimetypes
 from json_discovery import get_endpoint
 from web import web_bp
 from federation import federation_bp
+import secrets
+from werkzeug.security import generate_password_hash, check_password_hash
+import pyotp
 
 
 # Config & Logging
@@ -70,6 +73,24 @@ class Message(db.Model):
     text = db.Column(db.Text)
     validation_key = db.Column(db.String(50))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(200), nullable=False)
+    otp_secret = db.Column(db.String(32), default=pyotp.random_base32)
+    is_2fa_enabled = db.Column(db.Boolean, default=False)
+    
+    # Relatie naar actieve apparaten/sessies
+    sessions = db.relationship('UserSession', backref='user', lazy=True, cascade="all, delete-orphan")
+
+class UserSession(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    token = db.Column(db.String(64), unique=True, nullable=False) # Het unieke apparaat-token
+    device_info = db.Column(db.String(255)) # Bijv. "Chrome on Windows"
+    last_active = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)
 
 with app.app_context():
     db.create_all()
@@ -218,7 +239,7 @@ def upload_file():
 def serve_upload(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-@app.route("/.well-known/BSCP/userserver.json")
+@app.route("/.well-known/BSCP/userserver")
 def serve_userserver_config():
     """Serve BSCP userserver configuration in JSON format"""
     config = {

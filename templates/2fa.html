@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <title>BSCP - 2FA Verificatie</title>
+    <style>
+        body { background: #121212; color: white; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: #1e1e1e; padding: 2rem; border-radius: 8px; text-align: center; width: 300px; }
+        input { width: 100%; padding: 15px; font-size: 1.2rem; letter-spacing: 5px; text-align: center; margin: 20px 0; border-radius: 4px; border: 1px solid #333; background: #2a2a2a; color: white; }
+        button { width: 100%; padding: 10px; border: none; border-radius: 4px; background: #03dac6; color: black; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>2FA Code</h1>
+        <p>Voer de 6-cijferige code uit je authenticator app in.</p>
+        <form method="POST" action="{{ url_for('web.verify_2fa') }}">
+            <input name="otp" placeholder="000000" pattern="[0-9]*" inputmode="numeric" required maxlength="6" autofocus>
+            <button type="submit">Verifieer Apparaat</button>
+        </form>
+    </div>
+</body>
+</html>

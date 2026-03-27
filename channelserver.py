@@ -85,31 +85,31 @@ def poll_messages():
         "time": m.timestamp.timestamp()
     } for m in reversed(msgs)])
 
-@app.route("/.well-known/BSCP/channelserver.kdl")
+@app.route("/.well-known/BSCP/channelserver")
 def serve_channelserver_config():
-    kdl_content = f"""server {{
-    name "BSCP Channel Server"
-    version "1.0"
-    type "channelserver"
-}}
-
-api {{
-    base "http://{DOMAIN}"
-
-    endpoints {{
-        channel_send "/api/channel/send"
-        channel_poll "/api/channel/poll"
-    }}
-}}
-
-capabilities {{
-    federation true
-    channels true
-    direct_messaging false
-    media_upload false
-}}
-"""
-    return kdl_content, 200, {"Content-Type": "application/kdl; charset=utf-8"}
+    """Serve BSCP channelserver configuration in JSON format"""
+    config = {
+        "server": {
+            "name": "BSCP Channel Server",
+            "version": "1.0",
+            "type": "channelserver"
+        },
+        "api": {
+            "base": f"http://{DOMAIN}",
+            "endpoints": {
+                "channel_send": "/api/channel/send",
+                "channel_poll": "/api/channel/poll"
+            }
+        },
+        "capabilities": {
+            "federation": True,
+            "channels": True,
+            "direct_messaging": False,
+            "media_upload": False
+        }
+    }
+    
+    return config, 200, {"Content-Type": "application/json; charset=utf-8"}
 
 if __name__ == "__main__":
     print(f"Channel Server running on port {PORT}")
