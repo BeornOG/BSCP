@@ -13,9 +13,17 @@ from federation import federation_bp
 
 
 # Config & Logging
-basedir = os.path.abspath(os.path.dirname(__file__))
-env_file = sys.argv[1] if len(sys.argv) > 1 else ".env"
-load_dotenv(env_file)
+# 1. Determine if a custom file was provided via command line
+custom_env = sys.argv[1] if len(sys.argv) > 1 else None
+env_file = custom_env if custom_env else ".env"
+env_path = os.path.join(basedir, env_file)
+
+# 2. If the user explicitly provided a file but it doesn't exist, raise an error
+if custom_env and not os.path.exists(env_path):
+    raise FileNotFoundError(f"Specified env file not found: {env_path}")
+
+# 3. Load the file (load_dotenv returns False if the file isn't found/loaded)
+load_dotenv(env_path)
 
 PORT = int(os.getenv("PORT", 5000))
 DOMAIN = os.getenv("DOMAIN", f"localhost:{PORT}")
