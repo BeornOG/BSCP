@@ -201,7 +201,7 @@ function createMessageElement(m) {
             <div class="flex-shrink-0 mb-1"><div class="w-8 h-8 rounded-lg bg-primary text-on-primary flex items-center justify-center font-bold text-[10px]">${displaySender.substring(0,2).toUpperCase()}</div></div>
             <div class="space-y-1 items-end flex flex-col">
                 <div class="bg-primary text-on-primary p-4 rounded-2xl rounded-br-none shadow-lg text-sm">${htmlContent}</div>
-                <span class="text-[10px] text-on-surface-variant pr-1 opacity-0 group-hover:opacity-100 transition-opacity">${timeString}</span>
+                <span class="text-[10px] text-on-surface-variant pr-1">${timeString}</span>
             </div>
         `;
     } else {

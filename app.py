@@ -1,18 +1,17 @@
-import sys, uuid, requests, os, io
+import sys, uuid, requests, os, io, re, markdown, hashlib
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for, send_file, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from dotenv import load_dotenv
-import os, re, markdown, hashlib
-from flask import send_from_directory, url_for
 from werkzeug.utils import secure_filename
 import mimetypes
-from kdl_discovery import get_endpoint
+from json_discovery import get_endpoint
 from web import web_bp
 from federation import federation_bp
 
 
 # Config & Logging
+basedir = os.path.abspath(os.path.dirname(__file__))
 # 1. Determine if a custom file was provided via command line
 custom_env = sys.argv[1] if len(sys.argv) > 1 else None
 env_file = custom_env if custom_env else ".env"
@@ -23,6 +22,7 @@ if custom_env and not os.path.exists(env_path):
     raise FileNotFoundError(f"Specified env file not found: {env_path}")
 
 # 3. Load the file (load_dotenv returns False if the file isn't found/loaded)
+
 load_dotenv(env_path)
 
 PORT = int(os.getenv("PORT", 5000))
@@ -157,13 +157,18 @@ def send_message():
         
 
         target_domain = receiver.split('@')[-1]
-        payload = {"id": full_id, "sender": session['username'], "receiver": receiver, 
+        payload = {"id": full_id, "sender": session['username'], "receiver": receiver,
                    "text": data['messageText'], "validationKey": val_key}
+        Send_URL = get_endpoint(target_domain, "userserver", "federation_receive")
+
+        if not Send_URL:
+            Send_URL = f"http://{target_domain}/federation/receive"  # Fallback
 
         try:
-            requests.post(f"http://{target_domain}/federation/receive", json=payload, timeout=3)
+            requests.post(Send_URL, json=payload, timeout=5)
             return jsonify({"status": "Sent"})
-        except:
+        except Exception as e:
+            print(f"Validation error: {e}")            
             return jsonify({"error": "Offline"}), 500
 
 @app.route("/media/proxy")
@@ -213,36 +218,36 @@ def upload_file():
 def serve_upload(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-@app.route("/.well-known/BSCP/userserver.kdl")
+@app.route("/.well-known/BSCP/userserver.json")
 def serve_userserver_config():
-    kdl_content = f"""server {{
-    name "BSCP User Server"
-    version "1.0"
-    type "userserver"
-}}
-
-api {{
-    base "http://{DOMAIN}"
-
-    endpoints {{
-        chats "/api/chats"
-        messages "/api/messages"
-        send_message "/api/sendmessage"
-        federation_receive "/federation/receive"
-        federation_validate "/federation/validate"
-        upload "/api/upload"
-        media_proxy "/media/proxy"
-    }}
-}}
-
-capabilities {{
-    federation true
-    channels false
-    direct_messaging true
-    media_upload true
-}}
-"""
-    return kdl_content, 200, {"Content-Type": "application/kdl; charset=utf-8"}
+    """Serve BSCP userserver configuration in JSON format"""
+    config = {
+        "server": {
+            "name": "BSCP User Server",
+            "version": "1.0",
+            "type": "userserver"
+        },
+        "api": {
+            "base": f"http://{DOMAIN}",
+            "endpoints": {
+                "chats": "/api/chats",
+                "messages": "/api/messages",
+                "send_message": "/api/sendmessage",
+                "federation_receive": "/federation/receive",
+                "federation_validate": "/federation/validate",
+                "upload": "/api/upload",
+                "media_proxy": "/media/proxy"
+            }
+        },
+        "capabilities": {
+            "federation": True,
+            "channels": False,
+            "direct_messaging": True,
+            "media_upload": True
+        }
+    }
+    
+    return config, 200, {"Content-Type": "application/json; charset=utf-8"}
 
 if __name__ == "__main__":
     app.run(port=PORT)

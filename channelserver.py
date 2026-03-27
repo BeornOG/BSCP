@@ -3,7 +3,7 @@ from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from dotenv import load_dotenv
-from kdl_discovery import get_endpoint
+from json_discovery import get_endpoint
 
 # --- Config ---
 basedir = os.path.abspath(os.path.dirname(__file__))
