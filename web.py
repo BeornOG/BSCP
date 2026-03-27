@@ -1,5 +1,5 @@
 """Web UI routes for BSCP"""
-from flask import Blueprint, request, render_template, session, redirect, url_for, make_response, abort
+from flask import Blueprint, request, render_template, session, redirect, url_for, make_response, abort, current_app
 #from app import db, User, UserSession
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -10,18 +10,21 @@ web_bp = Blueprint('web', __name__)
 
 @web_bp.route("/")
 def index():
-    from app import db, User, UserSession
+    from app import User, UserSession
+    db = current_app.extensions['sqlalchemy']
     if 'username' not in session: return redirect(url_for('web.login'))
     return render_template('index.html', user=session['username'])
 
 @web_bp.route("/login", methods=["GET", "POST"])
 def login():
-    from app import db, User, UserSession
+    
+    from app import User, UserSession
+    db = current_app.extensions['sqlalchemy']
     if request.method == "POST":
         username = request.form.get('user')
         password = request.form.get('password')
         
-        user = User.query.filter_by(username=username).first()
+        user = db.session.query(User).filter_by(username=username).first()
         
         if user and check_password_hash(user.password_hash, password):
             # Stap 1 geslaagd: Sla user_id tijdelijk op in de Flask-sessie
@@ -32,12 +35,13 @@ def login():
 
 @web_bp.route("/login/2fa", methods=["GET", "POST"])
 def verify_2fa():
-    from app import db, User, UserSession
+    from app import User, UserSession
+    db = current_app.extensions['sqlalchemy']
     user_id = session.get('pending_user_id')
     if not user_id:
         return redirect(url_for('web.login'))
 
-    user = User.query.get(user_id)
+    user = db.session.query(User).get(user_id)
 
     if request.method == "POST":
         otp_code = request.form.get('otp')
@@ -64,7 +68,8 @@ def verify_2fa():
 
 @web_bp.before_app_request
 def load_logged_in_user():
-    from app import db, User, UserSession
+    from app import User, UserSession
+    db = current_app.extensions['sqlalchemy']
     token = session.get('session_token')
     if token:
         user_session = UserSession.query.filter_by(token=token).first()
@@ -80,8 +85,9 @@ def load_logged_in_user():
         request.user = None
 
 def login_required(f):
-    from app import db, User, UserSession
+    from app import User, UserSession
     from functools import wraps
+    db = current_app.extensions['sqlalchemy']
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if request.user is None:

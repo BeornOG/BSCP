@@ -92,6 +92,7 @@ class UserSession(db.Model):
     last_active = db.Column(db.DateTime, default=datetime.utcnow)
     expires_at = db.Column(db.DateTime, nullable=False)
 
+
 with app.app_context():
     db.create_all()
 
