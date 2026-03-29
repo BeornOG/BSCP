@@ -82,6 +82,7 @@ class User(db.Model):
     otp_secret = db.Column(db.String(32), default=pyotp.random_base32)
     is_2fa_enabled = db.Column(db.Boolean, default=False)
     is_admin = db.Column(db.Boolean, default=False)
+    is_deleted = db.Column(db.Boolean, default=False)
 
     # Relatie naar actieve apparaten/sessies
     sessions = db.relationship('UserSession', backref='user', lazy=True, cascade="all, delete-orphan")
@@ -276,6 +277,8 @@ def send_message():
 
 @app.route("/media/proxy")
 def media_proxy():
+    if not hasattr(request, 'user') or request.user is None:
+        return "Unauthorized", 401
     url = request.args.get("url")
     if not url: return "Missing URL", 400
     
@@ -306,6 +309,8 @@ def media_proxy():
 
 @app.route("/api/upload", methods=["POST"])
 def upload_file():
+    if not hasattr(request, 'user') or request.user is None:
+        return "Unauthorized", 401
     if 'file' not in request.files: return "No file", 400
     file = request.files['file']
     if file.filename == '': return "No filename", 400

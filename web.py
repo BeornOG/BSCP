@@ -1,5 +1,5 @@
 """Web UI routes for BSCP"""
-from flask import Blueprint, request, render_template, session, redirect, url_for, make_response, abort, current_app
+from flask import Blueprint, request, render_template, session, redirect, url_for, make_response, abort, current_app, jsonify
 #from app import db, User, UserSession
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -194,6 +194,93 @@ def register():
         return redirect(url_for('web.login'))
 
     return render_template('register.html')
+
+@web_bp.route("/admin")
+def admin_page():
+    if not hasattr(request, 'user') or request.user is None:
+        return redirect(url_for('web.login'))
+    if not hasattr(request, 'user') or (request.user.is_admin != True):
+        return "Unauthorized", 401
+    from app import DOMAIN
+    return render_template('admin.html')
+
+@web_bp.route("/api/users", methods=["GET"])
+def get_users():
+    from app import User, UserSession
+    db = current_app.extensions['sqlalchemy']
+    if not hasattr(request, 'user') or (request.user.is_admin != True):
+        return "Unauthorized", 401
+    users = db.session.query(User).all()
+    return jsonify([{
+        "id": u.id,
+        "username": u.username,
+        "is_admin": u.is_admin,
+        "is_2fa": u.is_2fa_enabled
+    } for u in users])
+
+@web_bp.route("/api/users/<int:user_id>", methods=["DELETE"])
+def delete_user(user_id):
+    from app import User, UserSession
+    db = current_app.extensions['sqlalchemy']
+    if not hasattr(request, 'user') or (request.user.is_admin != True):
+        return "Unauthorized", 401
+    
+    user = db.session.query(User).get_or_404(user_id)
+    
+    if user.is_admin:
+        return jsonify({"error": "Cannot delete admin user"}), 400
+        
+    # Perform Soft Delete
+    user.is_deleted = True
+    
+    # Optional: Clear sessions immediately on delete
+    # This leverages your cascade="all, delete-orphan" if you were deleting, 
+    # but for soft delete, we manually clear them:
+    user.sessions = [] 
+    
+    db.session.commit()
+    return jsonify({"message": f"User {user.username} has been deactivated."})
+
+# --- INVITE CODE ENDPOINTS ---
+
+@web_bp.route("/api/invites", methods=["GET"])
+def get_invites():
+    if not hasattr(request, 'user') or (request.user.is_admin != True):
+        return "Unauthorized", 401
+    from app import User, UserSession, InviteCode
+    db = current_app.extensions['sqlalchemy']
+    invites = db.session.query(InviteCode).all()
+    return jsonify([{
+        "code": i.code,
+        "created_by": i.created_by,
+        "used_by": i.used_by,
+        "status": "Used" if i.used_by else "Active",
+        "expires_at": i.expires_at.timestamp() if i.expires_at else "Never"
+    } for i in invites])
+
+@web_bp.route("/api/invites/generate", methods=["POST"])
+def generate_invite():
+    from app import InviteCode
+    if not hasattr(request, 'user') or (request.user.is_admin != True):
+        return "Unauthorized", 401
+    db = current_app.extensions['sqlalchemy']
+    
+    # In a real app, get current_user.id from session
+    creator_id = 1 
+    
+    new_code = secrets.token_hex(8)
+    expiry = datetime.utcnow() + timedelta(days=7)
+    
+    invite = InviteCode(
+        code=new_code,
+        created_by=creator_id,
+        expires_at=expiry
+    )
+    
+    db.session.add(invite)
+    db.session.commit()
+    
+    return jsonify({"code": new_code, "expires_at": expiry.strftime("%Y-%m-%d")})
 
 @web_bp.before_app_request
 def load_logged_in_user():
