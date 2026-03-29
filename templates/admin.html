@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Management</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
+    <link rel="stylesheet" href="static/style.css">
+    <style>
+        /* Layout specific styles to complement your external CSS */
+        body {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding: 40px;
+            box-sizing: border-box;
+            overflow-y: auto; /* Overriding 'hidden' from your CSS to allow scrolling content */
+        }
+        .container { max-width: 1000px; margin: 0 auto; width: 100%; }
+        
+        section { 
+            background: var(--dynamic-surface); 
+            padding: 24px; 
+            border-radius: 12px; 
+            margin-bottom: 24px; 
+            border: 1px solid #222629;
+        }
+
+        h2, h3 { margin-top: 0; color: var(--dynamic-primary); }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th { text-align: left; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #64748b; padding-bottom: 12px; }
+        td { padding: 16px 0; border-top: 1px solid #222629; }
+
+        .btn-action {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            font-weight: 600;
+            font-family: inherit;
+            transition: opacity 0.2s;
+        }
+        .btn-action:hover { opacity: 0.8; }
+        
+        .btn-gen { background: var(--dynamic-primary); color: #000; }
+        .btn-del { background: #ff4a4a; color: white; padding: 6px 12px; font-size: 0.85rem; }
+        
+        code { 
+            background: rgba(126, 175, 255, 0.1); 
+            color: var(--dynamic-primary); 
+            padding: 4px 8px; 
+            border-radius: 4px; 
+        }
+    </style>
+</head>
+<body class="custom-theme">
+
+    <div class="container">
+        <header style="margin-bottom: 30px;">
+            <h2 class="text-primary">Admin Dashboard</h2>
+            <p style="color: #64748b;">Manage system invites and user permissions.</p>
+        </header>
+
+        <section class="bg-surface">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3>Invite Codes</h3>
+                <button class="btn-action btn-gen" onclick="generateInvite()">
+                    <span class="material-symbols-outlined">add</span>
+                    Generate Code
+                </button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Status</th>
+                        <th>Expires</th>
+                        <th>Used By ID</th>
+                    </tr>
+                </thead>
+                <tbody id="invite-table">
+                    </tbody>
+            </table>
+        </section>
+
+        <section class="bg-surface">
+            <h3>User Management</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Username</th>
+                        <th>Role</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="user-table">
+                    </tbody>
+            </table>
+        </section>
+    </div>
+
+    <script>
+        // --- Fetch Data ---
+        async function loadData() {
+            try {
+                const [userRes, inviteRes] = await Promise.all([
+                    fetch('/api/users'),
+                    fetch('/api/invites')
+                ]);
+                
+                const users = await userRes.json();
+                const invites = await inviteRes.json();
+
+                // Render Users
+                const userTable = document.getElementById('user-table');
+                userTable.innerHTML = users.map(u => `
+                    <tr>
+                        <td>#${u.id}</td>
+                        <td style="font-weight: 600;">${u.username}</td>
+                        <td>${u.is_admin ? '<span class="text-primary">Admin</span>' : 'User'}</td>
+                        <td>
+                            ${u.is_admin ? '' : `
+                                <button class="btn-action btn-del" onclick="deleteUser(${u.id})">
+                                    <span class="material-symbols-outlined" style="font-size: 18px;">delete</span>
+                                    Delete
+                                </button>
+                            `}
+                        </td>
+                    </tr>
+                `).join('');
+
+                // Render Invites
+                const inviteTable = document.getElementById('invite-table');
+                inviteTable.innerHTML = invites.map(i => {
+                    // Convert epoch (seconds) to Date object (milliseconds)
+                    const date = new Date(i.expires_at * 1000);
+
+                    // Format to local string (e.g., "3/29/2026, 5:00 PM")
+                    const localTime = date.toLocaleString();
+                    return `
+                        <tr>
+                            <td><code>${i.code}</code></td>
+                            <td>${i.status}</td>
+                            <td style="color: #64748b;">${localTime}</td>
+                            <td>${i.used_by}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (err) {
+                console.error("Failed to load dashboard data", err);
+            }
+        }
+
+        // --- Actions ---
+        async function generateInvite() {
+            const res = await fetch('/api/invites/generate', { method: 'POST' });
+            if (res.ok) loadData();
+        }
+
+        async function deleteUser(id) {
+            if (!confirm("Are you sure you want to remove this user?")) return;
+            const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+            if (res.ok) loadData();
+            else alert("Error deleting user");
+        }
+
+        // Init
+        loadData();
+    </script>
+</body>
+</html>

@@ -1,33 +1,46 @@
-import sys, uuid, requests, os, io
+import sys, uuid, requests, os, io, re, markdown, hashlib
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for, send_file, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from dotenv import load_dotenv
-import os, re, markdown, hashlib
-from flask import send_from_directory, url_for
 from werkzeug.utils import secure_filename
 import mimetypes
+from json_discovery import get_endpoint
+from web import web_bp
+from federation import federation_bp
+import secrets
+from werkzeug.security import generate_password_hash, check_password_hash
+import pyotp
 
 
 # Config & Logging
 basedir = os.path.abspath(os.path.dirname(__file__))
-env_file = sys.argv[1] if len(sys.argv) > 1 else ".env"
-load_dotenv(env_file)
+# 1. Determine if a custom file was provided via command line
+custom_env = sys.argv[1] if len(sys.argv) > 1 else None
+env_file = custom_env if custom_env else ".env"
+env_path = os.path.join(basedir, env_file)
+
+# 2. If the user explicitly provided a file but it doesn't exist, raise an error
+if custom_env and not os.path.exists(env_path):
+    raise FileNotFoundError(f"Specified env file not found: {env_path}")
+
+# 3. Load the file (load_dotenv returns False if the file isn't found/loaded)
+
+load_dotenv(env_path)
 
 PORT = int(os.getenv("PORT", 5000))
 DOMAIN = os.getenv("DOMAIN", f"localhost:{PORT}")
-DB_NAME = os.getenv("DB_NAME", f"database_{PORT}.db")
+DB_NAME = os.path.join(basedir, os.getenv("DB_NAME", "data/userserver.db"))
 SECRET_KEY = os.getenv("SECRET_KEY", "default_secret_key")
-CACHE_DIR = os.getenv("CACHE_DIR", "media_cache")
+CACHE_DIR = os.path.join(basedir, os.getenv("CACHE_DIR", "media_cache"))
 CACHE_TIME = int(os.getenv("CACHE_TIME", 3600)) # in seconden (1 uur)
-UPLOAD_FOLDER = os.getenv("UPLOAD_DIR", "uploads")
-DB_NAME = os.path.join(basedir, DB_NAME)
-UPLOAD_FOLDER = os.path.join(basedir, UPLOAD_FOLDER)
+UPLOAD_FOLDER = os.path.join(basedir, os.getenv("UPLOAD_DIR", "uploads"))
 
-if not os.path.exists(CACHE_DIR):
-    os.makedirs(CACHE_DIR)
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+
+# Create directories if they don't exist
+os.makedirs(os.path.dirname(DB_NAME), exist_ok=True)
+os.makedirs(CACHE_DIR, exist_ok=True)
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 print(f"--- UserNode Configuration ---")
 print(f"Configuratie: {env_file}")
@@ -45,7 +58,12 @@ app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DB_NAME}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Limiet op 16MB
+app.config['DOMAIN'] = DOMAIN
 db = SQLAlchemy(app)
+
+# Register blueprints
+app.register_blueprint(web_bp)
+app.register_blueprint(federation_bp)
 
 class Message(db.Model):
     # ID is nu: domain/uuid om conflicten te voorkomen
@@ -56,6 +74,37 @@ class Message(db.Model):
     validation_key = db.Column(db.String(50))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(200), nullable=False)
+    email = db.Column(db.String(120))
+    otp_secret = db.Column(db.String(32), default=pyotp.random_base32)
+    is_2fa_enabled = db.Column(db.Boolean, default=False)
+    is_admin = db.Column(db.Boolean, default=False)
+    is_deleted = db.Column(db.Boolean, default=False)
+
+    # Relatie naar actieve apparaten/sessies
+    sessions = db.relationship('UserSession', backref='user', lazy=True, cascade="all, delete-orphan")
+
+class UserSession(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    token = db.Column(db.String(64), unique=True, nullable=False) # Het unieke apparaat-token
+    device_info = db.Column(db.String(255)) # Bijv. "Chrome on Windows"
+    last_active = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)
+
+class InviteCode(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(64), unique=True, nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    used_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    used_at = db.Column(db.DateTime)
+    expires_at = db.Column(db.DateTime)
+
+
 with app.app_context():
     db.create_all()
 
@@ -63,18 +112,42 @@ with app.app_context():
 
 @app.route("/api/chats")
 def get_chats():
-    if 'username' not in session: return "Unauthorized", 401
-    me = session['username']
-    # Zoek alle unieke gesprekspartners
-    senders = db.session.query(Message.sender).filter(Message.receiver == me).distinct()
-    receivers = db.session.query(Message.receiver).filter(Message.sender == me).distinct()
-    partners = set([s[0] for s in senders] + [r[0] for r in receivers])
+    if not hasattr(request, 'user') or request.user is None:
+        return "Unauthorized", 401
+    me = request.user.username
+
+    # Find all users I've communicated with
+    from sqlalchemy import or_
+
+    # Messages where I'm the sender (sender starts with me@)
+    sent_to = db.session.query(Message.receiver).filter(
+        Message.sender.ilike(f"{me}@%")
+    ).distinct()
+
+    # Messages where I'm the receiver (receiver starts with me@)
+    received_from = db.session.query(Message.sender).filter(
+        Message.receiver.ilike(f"{me}@%")
+    ).distinct()
+
+    partners = set()
+
+    # Add senders of messages I received (always have domain now)
+    for sender in received_from:
+        sender_name = sender[0]
+        partners.add(sender_name)
+
+    # Add receivers of messages I sent (always have domain now)
+    for receiver in sent_to:
+        receiver_name = receiver[0]
+        partners.add(receiver_name)
+
     return jsonify(list(partners))
 
 @app.route("/api/messages/<path:target>")
 def get_messages(target):
-    if 'username' not in session: return "Unauthorized", 401
-    me = session['username']
+    if not hasattr(request, 'user') or request.user is None:
+        return "Unauthorized", 401
+    me = request.user.username
 
     since = request.args.get("since", type=float)    # Get messages AFTER this time
     before = request.args.get("before", type=float)  # Get messages BEFORE this time (for history)
@@ -83,114 +156,129 @@ def get_messages(target):
     # BRANCH: Channel Server (External)
     if "#" in target:
         target_domain = target.split('#')[0]
-        channel_url = f"http://{target_domain}/api/channel/poll"
+        channel_url = get_endpoint(target_domain, "channelserver", "channel_poll")
+        if not channel_url:
+            channel_url = f"http://{target_domain}/api/channel/poll"  # Fallback
         params = {"path": target, "limit": limit, "since": since, "before": before}
         try:
             return jsonify(requests.get(channel_url, params=params).json())
         except:
             return jsonify([]), 500
-    
-    query = Message.query.filter(
-        ((Message.sender == me) & (Message.receiver == target)) |
-        ((Message.sender == target) & (Message.receiver == me))
+
+    # Query for direct messages - both sender and receiver always include domain
+    from sqlalchemy import or_
+
+    # Build target with domain if not already present
+    target_with_domain = f"{target}@{DOMAIN}" if '@' not in target else target
+
+    # print(f"\n[MESSAGES DEBUG] Querying for user '{me}' talking to '{target}'")
+    # print(f"[MESSAGES DEBUG] Target normalized to: '{target_with_domain}'")
+    # print(f"[MESSAGES DEBUG] Looking for:")
+    # print(f"[MESSAGES DEBUG]   - Sent: sender starts with '{me}@' AND receiver == '{target_with_domain}'")
+    # print(f"[MESSAGES DEBUG]   - Received: sender == '{target_with_domain}' AND receiver starts with '{me}@'")
+
+    # First, check what's actually in the database
+    # all_messages = db.session.query(Message).all()
+    # print(f"[MESSAGES DEBUG] Total messages in database: {len(all_messages)}")
+    # for m in all_messages:
+    #     print(f"[MESSAGES DEBUG]   - ID: {m.id}, Sender: {m.sender}, Receiver: {m.receiver}")
+
+    # Build all possible variations of the target name for matching
+    target_variations = [target_with_domain, target]  # e.g., ["bob@localhost:5000", "bob"]
+
+    # Messages where I sent to target
+    sent_condition = (Message.sender.ilike(f"{me}@%")) & (Message.receiver.in_(target_variations))
+
+    # Messages where target sent to me
+    received_condition = (Message.sender.in_(target_variations)) & (Message.receiver.ilike(f"{me}@%"))
+
+    # Also handle case where sender is domain-qualified version of target
+    received_condition = received_condition | (
+        (Message.sender.ilike(f"{target}@%")) & (Message.receiver.ilike(f"{me}@%"))
     )
 
+    query = Message.query.filter(or_(sent_condition, received_condition))
+
     if since:
-        # Convert epoch back to datetime for SQLAlchemy
         query = query.filter(Message.timestamp > datetime.fromtimestamp(since))
     if before:
         query = query.filter(Message.timestamp < datetime.fromtimestamp(before))
 
     msgs = query.order_by(Message.timestamp.desc()).limit(limit).all()
-    
+
+    #print(f"[MESSAGES] Query for user '{me}' talking to '{target}' (normalized to '{target_with_domain}')")
+    #print(f"[MESSAGES] Found {len(msgs)} messages")
+    #for m in msgs:
+        #print(f"  - {m.sender} -> {m.receiver}: {m.text[:50] if m.text else 'NO TEXT'}")
+
     return jsonify([{
-        "id": m.id, 
-        "sender": m.sender, 
-        "text": m.text, 
+        "id": m.id,
+        "sender": m.sender,
+        "text": m.text,
         "time": m.timestamp.timestamp() # Sends as Unix Epoch (float)
     } for m in reversed(msgs)])
 
 @app.route("/api/sendmessage", methods=["POST"])
 def send_message():
-    if 'username' not in session: return "Unauthorized", 401
+    if not hasattr(request, 'user') or request.user is None:
+        return "Unauthorized", 401
     data = request.json
     msg_uuid = str(uuid.uuid4())
     full_id = f"{DOMAIN}/{msg_uuid}" # Unieke ID over federatie heen
     val_key = "key-" + msg_uuid[:8]
-    new_msg = Message(id=full_id, sender=session['username'], receiver=data['receiver'], 
+
+    # Normalize receiver to always include domain
+    receiver = data['receiver']
+    if '@' not in receiver:
+        # Local message - add our domain
+        receiver_normalized = f"{receiver}@{DOMAIN}"
+    else:
+        # Remote message - already has domain
+        receiver_normalized = receiver
+
+    new_msg = Message(id=full_id, sender=f"{request.user.username}@{DOMAIN}", receiver=receiver_normalized,
                       text=data['messageText'], validation_key=val_key)
     db.session.add(new_msg)
     db.session.commit()
-    receiver = data['receiver'] # e.g. "domain.com#general#news"
 
     # --- CHANNEL LOGIC ---
     if "#" in receiver:
         target_domain = receiver.split('#')[0]
-        payload = {"id": full_id, "sender": session['username'], "receiver": receiver, 
+        channel_url = get_endpoint(target_domain, "channelserver", "channel_send")
+        if not channel_url:
+            channel_url = f"http://{target_domain}/api/channel/send"  # Fallback
+        payload = {"id": full_id, "sender": f"{request.user.username}@{DOMAIN}", "receiver": receiver,
                    "text": data['messageText'], "validationKey": val_key}
         try:
-            # Assuming channel server runs on a known port or same domain
-            requests.post(f"http://{target_domain}/api/channel/send", json=payload, timeout=3)
+            requests.post(channel_url, json=payload, timeout=3)
             return jsonify({"status": "Sent to Channel"})
         except:
             return jsonify({"error": "Channel Server Offline"}), 500
     else:
-        
-
-        target_domain = receiver.split('@')[-1]
-        payload = {"id": full_id, "sender": session['username'], "receiver": receiver, 
+        # Direct message
+        if '@' not in receiver:
+            # Local message - just username
+            target_domain = DOMAIN
+        else:
+            target_domain = receiver.split('@')[-1]
+        payload = {"id": full_id, "sender": f"{request.user.username}@{DOMAIN}", "receiver": receiver_normalized,
                    "text": data['messageText'], "validationKey": val_key}
+        Send_URL = get_endpoint(target_domain, "userserver", "federation_receive")
+
+        if not Send_URL:
+            Send_URL = f"http://{target_domain}/federation/receive"  # Fallback
 
         try:
-            requests.post(f"http://{target_domain}/federation/receive", json=payload, timeout=3)
+            requests.post(Send_URL, json=payload, timeout=5)
             return jsonify({"status": "Sent"})
-        except:
+        except Exception as e:
+            print(f"Validation error: {e}")
             return jsonify({"error": "Offline"}), 500
 
-@app.route("/federation/receive", methods=["POST"])
-def receive_message():
-    data = request.json
-    sender_domain = data['sender'].split('@')[-1]
-    val_params = {"messageId": data['id'], "validationKey": data['validationKey']}
-    
-    try:
-        val_resp = requests.get(f"http://{sender_domain}/federation/validate", params=val_params, timeout=3)
-        if val_resp.json().get("valid"):
-            received = Message(id=data['id'], sender=data['sender'], receiver=data['receiver'], text=data['text'])
-            db.session.add(received)
-            db.session.commit()
-            return "OK", 200
-    except: pass
-    return "Invalid", 401
-
-@app.route("/federation/validate")
-def validate_message():
-    print(request.args.get("messageId"))
-    msg = Message.query.get(request.args.get("messageId"))
-    if msg and msg.validation_key == request.args.get("validationKey"):
-        return jsonify({"valid": True})
-    return jsonify({"valid": False})
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        session['username'] = f"{request.form['user']}@{DOMAIN}"
-        return redirect(url_for('index'))
-    return '<body style="background:#121212;color:white;display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;"><form method="post"><h1>Login</h1><input name="user" placeholder="username" required><button>Enter</button></form></body>'
-
-@app.route("/")
-def index():
-    if 'username' not in session: return redirect(url_for('login'))
-    return render_template('index.html', user=session['username'])
-
-#@app.route("/api/GetLocalName")
-#def index():
-    #if 'username' not in session: return redirect(url_for('login'))
-    #return f'"username":"{session['username']}'
-
-#media stuff
 @app.route("/media/proxy")
 def media_proxy():
+    if not hasattr(request, 'user') or request.user is None:
+        return "Unauthorized", 401
     url = request.args.get("url")
     if not url: return "Missing URL", 400
     
@@ -221,6 +309,8 @@ def media_proxy():
 
 @app.route("/api/upload", methods=["POST"])
 def upload_file():
+    if not hasattr(request, 'user') or request.user is None:
+        return "Unauthorized", 401
     if 'file' not in request.files: return "No file", 400
     file = request.files['file']
     if file.filename == '': return "No filename", 400
@@ -235,6 +325,38 @@ def upload_file():
 @app.route("/uploads/<filename>")
 def serve_upload(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route("/.well-known/BSCP/userserver")
+@app.route("/.well-known/BSCP/userserver.json")
+def serve_userserver_config():
+    """Serve BSCP userserver configuration in JSON format"""
+    config = {
+        "server": {
+            "name": "BSCP User Server",
+            "version": "1.0",
+            "type": "userserver"
+        },
+        "api": {
+            "base": f"http://{DOMAIN}",
+            "endpoints": {
+                "chats": "/api/chats",
+                "messages": "/api/messages",
+                "send_message": "/api/sendmessage",
+                "federation_receive": "/federation/receive",
+                "federation_validate": "/federation/validate",
+                "upload": "/api/upload",
+                "media_proxy": "/media/proxy"
+            }
+        },
+        "capabilities": {
+            "federation": True,
+            "channels": False,
+            "direct_messaging": True,
+            "media_upload": True
+        }
+    }
+    
+    return config, 200, {"Content-Type": "application/json; charset=utf-8"}
 
 if __name__ == "__main__":
     app.run(port=PORT)
