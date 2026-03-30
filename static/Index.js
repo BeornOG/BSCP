@@ -17,6 +17,24 @@ let userSettings = JSON.parse(localStorage.getItem('atelierSettings')) || {
     accentColor: '#7eafff'
 };
 
+// Fetch settings from server on page load
+async function loadSettingsFromServer() {
+    try {
+        const res = await fetch('/api/settings');
+        if (res.ok) {
+            const data = await res.json();
+            userSettings.displayName = data.display_name || defaultDisplayName;
+            userSettings.theme = data.theme || 'dark';
+            userSettings.accentColor = data.accent_color || '#7eafff';
+            // Update localStorage cache
+            localStorage.setItem('atelierSettings', JSON.stringify(userSettings));
+            applySettings();
+        }
+    } catch (err) {
+        console.error("Failed to load settings from server:", err);
+    }
+}
+
 function applySettings() {
     // Apply Variables
     document.documentElement.style.setProperty('--dynamic-primary', userSettings.accentColor);
@@ -72,18 +90,44 @@ function selectTheme(theme) {
             card.classList.add('border-transparent');
         }
     });
+
+    // Sync to server
+    fetch('/api/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ theme: userSettings.theme })
+    }).catch(err => console.error("Failed to sync theme:", err));
 }
 
 function selectAccent(hex) {
     userSettings.accentColor = hex;
     document.documentElement.style.setProperty('--dynamic-primary', hex); // Live preview
+
+    // Sync to server
+    fetch('/api/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ accent_color: userSettings.accentColor })
+    }).catch(err => console.error("Failed to sync accent color:", err));
 }
 
 function saveSettings() {
     userSettings.displayName = document.getElementById('input-display-name').value || defaultDisplayName;
     localStorage.setItem('atelierSettings', JSON.stringify(userSettings));
+
+    // Sync to server
+    fetch('/api/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            display_name: userSettings.displayName,
+            theme: userSettings.theme,
+            accent_color: userSettings.accentColor
+        })
+    }).catch(err => console.error("Failed to sync settings:", err));
+
     applySettings();
-    
+
     // Visual feedback
     const btn = document.querySelector('footer button');
     const origText = btn.innerText;
@@ -167,6 +211,31 @@ function selectChat(chat) {
     loadChats();
 }
 
+function openImageModal(src) {
+    const modal = document.getElementById('image-modal');
+    const imgElement = document.getElementById('modal-image');
+    if (!modal || !imgElement) {
+        console.error("Modal or image element not found");
+        return;
+    }
+    imgElement.src = src;
+    modal.style.opacity = "1";
+    modal.style.pointerEvents = "auto";
+}
+
+function closeImageModal() {
+    const modal = document.getElementById('image-modal');
+    if (modal) {
+        modal.style.opacity = "0";
+        modal.style.pointerEvents = "none";
+    }
+}
+
+// Close modal on ESC key
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeImageModal();
+});
+
 function convertPlainMediaUrls(text) {
     const imageExtensions = /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i;
     const videoExtensions = /\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v)(\?.*)?$/i;
@@ -209,6 +278,8 @@ function createMessageElement(m) {
             img.src = `/media/proxy?url=${encodeURIComponent(original)}`;
         }
         img.loading = "lazy";
+        img.style.cursor = "pointer";
+        img.style.borderRadius = "8px";
     });
     // Proxy videos logic
     temp.querySelectorAll('video source').forEach(source => {
@@ -218,7 +289,7 @@ function createMessageElement(m) {
         }
     });
     htmlContent = temp.innerHTML;
-    
+
     // Parse Unix Timestamp (float seconds to milliseconds)
     const date = new Date((m.time || 0) * 1000);
     const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -245,6 +316,15 @@ function createMessageElement(m) {
             </div>
         `;
     }
+
+    // Attach image click handlers after div is created
+    div.querySelectorAll('img').forEach(img => {
+        img.onclick = (e) => {
+            console.log("Image clicked:", img.src);
+            openImageModal(img.src);
+        };
+    });
+
     return div;
 }
 
@@ -369,7 +449,9 @@ async function handleFileUpload() {
 }
 
 // Initialization
-document.addEventListener('DOMContentLoaded', applySettings);
+document.addEventListener('DOMContentLoaded', () => {
+    loadSettingsFromServer().then(() => applySettings());
+});
 function initApp() {
     if (typeof marked !== 'undefined') {
         marked.setOptions({ gfm: true, breaks: true });

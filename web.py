@@ -282,6 +282,19 @@ def generate_invite():
     
     return jsonify({"code": new_code, "expires_at": expiry.strftime("%Y-%m-%d")})
 
+@web_bp.route("/logout", methods=["POST"])
+def logout():
+    from app import UserSession
+    db = current_app.extensions['sqlalchemy']
+    token = session.get('session_token')
+    if token:
+        user_session = db.session.query(UserSession).filter_by(token=token).first()
+        if user_session:
+            db.session.delete(user_session)
+            db.session.commit()
+    session.clear()
+    return redirect(url_for('web.login'))
+
 @web_bp.before_app_request
 def load_logged_in_user():
     from app import User, UserSession

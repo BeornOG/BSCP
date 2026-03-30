@@ -160,6 +160,11 @@ class User(db.Model):
     is_admin = db.Column(db.Boolean, default=False)
     is_deleted = db.Column(db.Boolean, default=False)
 
+    # User preferences
+    display_name = db.Column(db.String(100))
+    theme = db.Column(db.String(20), default='dark')
+    accent_color = db.Column(db.String(7), default='#7eafff')
+
     # Relatie naar actieve apparaten/sessies
     sessions = db.relationship('UserSession', backref='user', lazy=True, cascade="all, delete-orphan")
 
@@ -191,18 +196,19 @@ def get_chats():
     if not hasattr(request, 'user') or request.user is None:
         return "Unauthorized", 401
     me = request.user.username
+    my_full_identity = f"{me}@{DOMAIN}"
 
     # Find all users I've communicated with
     from sqlalchemy import or_
 
-    # Messages where I'm the sender (sender starts with me@)
+    # Messages where I'm the sender (exact match on my full identity)
     sent_to = db.session.query(Message.receiver).filter(
-        Message.sender.ilike(f"{me}@%")
+        Message.sender == my_full_identity
     ).distinct()
 
-    # Messages where I'm the receiver (receiver starts with me@)
+    # Messages where I'm the receiver (exact match on my full identity)
     received_from = db.session.query(Message.sender).filter(
-        Message.receiver.ilike(f"{me}@%")
+        Message.receiver == my_full_identity
     ).distinct()
 
     partners = set()
@@ -260,18 +266,17 @@ def get_messages(target):
     #     print(f"[MESSAGES DEBUG]   - ID: {m.id}, Sender: {m.sender}, Receiver: {m.receiver}")
 
     # Build all possible variations of the target name for matching
-    target_variations = [target_with_domain, target]  # e.g., ["bob@localhost:5000", "bob"]
+    # ONLY match on domain-qualified names to prevent cross-instance message leaks
+    target_variations = [target_with_domain]  # e.g., ["bob@localhost:5000"]
+
+    # Build my full user@domain identifier for exact matching
+    my_full_identity = f"{me}@{DOMAIN}"
 
     # Messages where I sent to target
-    sent_condition = (Message.sender.ilike(f"{me}@%")) & (Message.receiver.in_(target_variations))
+    sent_condition = (Message.sender == my_full_identity) & (Message.receiver == target_with_domain)
 
     # Messages where target sent to me
-    received_condition = (Message.sender.in_(target_variations)) & (Message.receiver.ilike(f"{me}@%"))
-
-    # Also handle case where sender is domain-qualified version of target
-    received_condition = received_condition | (
-        (Message.sender.ilike(f"{target}@%")) & (Message.receiver.ilike(f"{me}@%"))
-    )
+    received_condition = (Message.sender == target_with_domain) & (Message.receiver == my_full_identity)
 
     query = Message.query.filter(or_(sent_condition, received_condition))
 
@@ -396,13 +401,43 @@ def upload_file():
     if 'file' not in request.files: return "No file", 400
     file = request.files['file']
     if file.filename == '': return "No filename", 400
-    
+
     filename = secure_filename(f"{uuid.uuid4()}_{file.filename}")
     file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-    
+
     # Genereer de Markdown tag voor de gebruiker
     file_url = f"http://{DOMAIN}/uploads/{filename}"
     return jsonify({"markdown": f"![image]({file_url})", "url": file_url})
+
+@app.route("/api/settings", methods=["GET"])
+def get_settings():
+    if not hasattr(request, 'user') or request.user is None:
+        return "Unauthorized", 401
+
+    user = request.user
+    return jsonify({
+        "display_name": user.display_name or user.username,
+        "theme": user.theme or "dark",
+        "accent_color": user.accent_color or "#7eafff"
+    })
+
+@app.route("/api/settings", methods=["POST"])
+def update_settings():
+    if not hasattr(request, 'user') or request.user is None:
+        return "Unauthorized", 401
+
+    data = request.get_json()
+    user = request.user
+
+    if 'display_name' in data:
+        user.display_name = data['display_name']
+    if 'theme' in data:
+        user.theme = data['theme']
+    if 'accent_color' in data:
+        user.accent_color = data['accent_color']
+
+    db.session.commit()
+    return jsonify({"success": True})
 
 @app.route("/uploads/<filename>")
 def serve_upload(filename):
