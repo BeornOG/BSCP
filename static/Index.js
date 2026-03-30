@@ -210,6 +210,13 @@ function createMessageElement(m) {
         }
         img.loading = "lazy";
     });
+    // Proxy videos logic
+    temp.querySelectorAll('video source').forEach(source => {
+        const original = source.src;
+        if(!original.includes(window.location.host + '/uploads/')) {
+            source.src = `/media/proxy?url=${encodeURIComponent(original)}`;
+        }
+    });
     htmlContent = temp.innerHTML;
     
     // Parse Unix Timestamp (float seconds to milliseconds)
