@@ -167,6 +167,26 @@ function selectChat(chat) {
     loadChats();
 }
 
+function convertPlainMediaUrls(text) {
+    const imageExtensions = /\.(png|jpg|jpeg|gif|webp|bmp|svg)(\?.*)?$/i;
+    const videoExtensions = /\.(mp4|webm|mov|avi|mkv|flv|wmv|m4v)(\?.*)?$/i;
+
+    // Check if entire text is already markdown format
+    if (/^!\[.*\]\(https?:\/\/[^\)]+\)$/.test(text) || /^<video[\s\S]*<\/video>$/.test(text)) {
+        return text; // Already markdown or HTML, skip processing
+    }
+
+    const urlRegex = /(https?:\/\/[^\s<>"'\)]+)/g;
+    return text.replace(urlRegex, (match) => {
+        if (imageExtensions.test(match)) {
+            return `![image](${match})`;
+        } else if (videoExtensions.test(match)) {
+            return `<video controls style="max-width: 100%; border-radius: 8px; margin: 8px 0;"><source src="${match}"></video>`;
+        }
+        return match;
+    });
+}
+
 function createMessageElement(m) {
     // Handle sender format (could be "user" or "user@domain")
     const mSenderUsername = m.sender ? m.sender.split('@')[0] : "Unknown";
@@ -177,7 +197,8 @@ function createMessageElement(m) {
     const safeText = m.text || "";
     const safeSender = mSenderUsername;
 
-    let htmlContent = marked.parse(safeText);
+    const textWithMediaMarkdown = convertPlainMediaUrls(safeText);
+    let htmlContent = marked.parse(textWithMediaMarkdown);
 
     // Proxy images logic
     const temp = document.createElement('div');
