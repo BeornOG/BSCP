@@ -1,4 +1,4 @@
-import sys, uuid, requests, os, io, re, markdown, hashlib, json
+import sys, uuid, requests, os, io, hashlib, json
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
