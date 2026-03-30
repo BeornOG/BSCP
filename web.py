@@ -70,7 +70,8 @@ def verify_2fa():
                 user_id=user.id,
                 token=device_token,
                 device_info=request.headers.get('User-Agent', 'Unknown Device'),
-                expires_at=datetime.utcnow() + timedelta(days=30)
+                expires_at=datetime.utcnow() + timedelta(days=30),
+                id = str(uuid.uuid4())
             )
             db.session.add(new_session)
             db.session.commit()
@@ -180,6 +181,7 @@ def register():
 
         # Create user
         user = User(
+            id = str(uuid.uuid4()),
             username=username,
             password_hash=generate_password_hash(password)
         )

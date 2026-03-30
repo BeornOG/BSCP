@@ -1,5 +1,6 @@
 // --- APP STATE & MESSAGING LOGIC ---
 let currentChat = null;
+let currentChatDisplayName = null;
 let chatSessionId = 0; // NEW: Tracks the active chat to prevent data bleed
 let loadedMessageIds = new Set();
 let oldestMsgTime = null;
@@ -177,18 +178,20 @@ async function loadChats() {
         const list = document.getElementById('chat-list');
         list.innerHTML = '';
         chats.forEach(chat => {
-            const isActive = (currentChat === chat);
+            const chatId = (typeof chat === 'string') ? chat : chat.id;
+            const chatDisplay = (typeof chat === 'string') ? chat.split('@')[0] : (chat.display_name || chatId.split('@')[0]);
+            const isActive = (currentChat === chatId);
             const activeClasses = isActive ? 'bg-surface-container-highest border-l-4 border-primary' : 'hover:bg-surface-container-high';
             const div = document.createElement('div');
             div.className = `${activeClasses} rounded-lg p-4 flex items-center gap-4 cursor-pointer transition-all duration-200`;
-            div.onclick = () => selectChat(chat);
+            div.onclick = () => selectChat(chatId, chatDisplay);
             div.innerHTML = `
                 <div class="relative flex-shrink-0">
                     <div class="w-10 h-10 rounded-lg bg-primary/20 text-primary flex items-center justify-center font-bold">
-                        ${chat.substring(0, 2).toUpperCase()}
+                        ${chatDisplay.substring(0, 2).toUpperCase()}
                     </div>
                 </div>
-                <div class="flex-1 min-w-0"><h3 class="font-bold text-sm truncate text-on-surface">${chat}</h3></div>
+                <div class="flex-1 min-w-0"><h3 class="font-bold text-sm truncate text-on-surface">${chatDisplay}</h3></div>
             `;
             list.appendChild(div);
         });
@@ -197,14 +200,15 @@ async function loadChats() {
     }
 }
 
-function selectChat(chat) {
-    currentChat = chat; 
+function selectChat(chatId, chatDisplayName) {
+    currentChat = chatId;
+    currentChatDisplayName = chatDisplayName || chatId.split('@')[0];
     chatSessionId++; // Invalidate any pending network requests from the previous chat
     isFetchingMessages = false; // Force unlock so the new chat loads instantly
     loadedMessageIds.clear();
     oldestMsgTime = null;
     newestMsgTime = null;
-    document.getElementById('chat-header').innerText = chat;
+    document.getElementById('chat-header').innerText = currentChatDisplayName;
     document.getElementById('new-chat-user').style.display = 'none';
     document.getElementById('messages').innerHTML = ''; // Clear container
     loadMessages(); 

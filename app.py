@@ -15,8 +15,23 @@ import time
 
 # Config & Logging
 basedir = os.path.abspath(os.path.dirname(__file__))
+
 # 1. Determine if a custom file was provided via command line
-custom_env = sys.argv[1] if len(sys.argv) > 1 else None
+custom_env = None
+custom_db = None
+
+# Parse command line arguments
+for i, arg in enumerate(sys.argv[1:], 1):
+    if arg.startswith("--db="):
+        custom_db = arg.split("=", 1)[1]
+    elif arg.startswith("--db"):
+        # --db followed by space-separated path
+        if i < len(sys.argv) - 1:
+            custom_db = sys.argv[i + 1]
+    elif not arg.startswith("--") and custom_env is None:
+        # First non-flag argument is the env file
+        custom_env = arg
+
 env_file = custom_env if custom_env else ".env"
 env_path = os.path.join(basedir, env_file)
 
@@ -25,12 +40,17 @@ if custom_env and not os.path.exists(env_path):
     raise FileNotFoundError(f"Specified env file not found: {env_path}")
 
 # 3. Load the file (load_dotenv returns False if the file isn't found/loaded)
-
 load_dotenv(env_path)
 
 PORT = int(os.getenv("PORT", 5000))
 DOMAIN = os.getenv("DOMAIN", f"localhost:{PORT}")
-DB_NAME = os.path.join(basedir, os.getenv("DB_NAME", "data/userserver.db"))
+
+# 4. Handle database file - custom arg overrides env var
+if custom_db:
+    # If custom_db is not absolute, make it relative to basedir
+    DB_NAME = custom_db if os.path.isabs(custom_db) else os.path.join(basedir, custom_db)
+else:
+    DB_NAME = os.path.join(basedir, os.getenv("DB_NAME", "data/userserver.db"))
 SECRET_KEY = os.getenv("SECRET_KEY", "default_secret_key")
 CACHE_DIR = os.path.join(basedir, os.getenv("CACHE_DIR", "media_cache"))
 CACHE_TIME = int(os.getenv("CACHE_TIME", 3600)) # in seconden (1 uur)
@@ -47,7 +67,7 @@ print(f"--- UserNode Configuration ---")
 print(f"Configuratie: {env_file}")
 print(f"Domain:       {DOMAIN}")
 print(f"Port:         {PORT}")
-print(f"Database:     {DB_NAME}")
+print(f"Database:     {DB_NAME}" + (f" (custom)" if custom_db else ""))
 print(f"Cache_Dir:    {CACHE_DIR}")
 print(f"Cache_time:   {CACHE_TIME}")
 print(f"Upload_Dir:   {UPLOAD_FOLDER}")
@@ -148,10 +168,11 @@ class Message(db.Model):
     receiver = db.Column(db.String(100))
     text = db.Column(db.Text)
     validation_key = db.Column(db.String(50))
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=datetime.now)
+    is_read = db.Column(db.Boolean, default=False)
 
 class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.String(255), primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
     email = db.Column(db.String(120))
@@ -164,16 +185,21 @@ class User(db.Model):
     display_name = db.Column(db.String(100))
     theme = db.Column(db.String(20), default='dark')
     accent_color = db.Column(db.String(7), default='#7eafff')
+    bio = db.Column(db.Text)
+    profile_pic = text = db.Column(db.Text)
+    Status_Text = db.Column(db.String(32))
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    Status_type = db.Column(db.Integer)
 
     # Relatie naar actieve apparaten/sessies
     sessions = db.relationship('UserSession', backref='user', lazy=True, cascade="all, delete-orphan")
 
 class UserSession(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.String(255), primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     token = db.Column(db.String(64), unique=True, nullable=False) # Het unieke apparaat-token
     device_info = db.Column(db.String(255)) # Bijv. "Chrome on Windows"
-    last_active = db.Column(db.DateTime, default=datetime.utcnow)
+    last_active = db.Column(db.DateTime, default=datetime.now)
     expires_at = db.Column(db.DateTime, nullable=False)
 
 class InviteCode(db.Model):
@@ -181,7 +207,7 @@ class InviteCode(db.Model):
     code = db.Column(db.String(64), unique=True, nullable=False)
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     used_by = db.Column(db.Integer, db.ForeignKey('user.id'))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.now)
     used_at = db.Column(db.DateTime)
     expires_at = db.Column(db.DateTime)
 
@@ -223,7 +249,23 @@ def get_chats():
         receiver_name = receiver[0]
         partners.add(receiver_name)
 
-    return jsonify(list(partners))
+    # Return structured chat entries with display names instead of raw IDs
+    chat_list = []
+    for partner in sorted(partners):
+        display_name = partner.split('@')[0]
+        if '@' in partner:
+            username, domain = partner.split('@', 1)
+            if domain == DOMAIN:
+                user_obj = User.query.filter_by(username=username).first()
+                if user_obj and user_obj.display_name:
+                    display_name = user_obj.display_name
+
+        chat_list.append({
+            'id': partner,
+            'display_name': display_name
+        })
+
+    return jsonify(chat_list)
 
 @app.route("/api/messages/<path:target>")
 def get_messages(target):

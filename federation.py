@@ -20,7 +20,7 @@ def receive_message():
             return "Invalid sender format", 400
 
         sender_domain = data['sender'].split('@')[-1]
-        val_params = {"messageId": data['id'], "validationKey": data['validationKey']}
+        val_params = {"messageId": data['id'], "validationKey": data['validationKey'], "sender": data['sender'], "receiver": data['receiver']}
         val_url = get_endpoint(sender_domain, "userserver", "federation_validate")
 
         if not val_url:
@@ -57,7 +57,7 @@ def validate_message():
         from app import Message
         db = current_app.extensions['sqlalchemy']
         msg = db.session.query(Message).filter_by(id=request.args.get("messageId")).first()
-        if msg and msg.validation_key == request.args.get("validationKey"):
+        if msg and msg.validation_key == request.args.get("validationKey") and msg.sender == request.args.get("sender") and msg.receiver == request.args.get("receiver"):
             return jsonify({"valid": True})
         return jsonify({"valid": False})
     except Exception as e:
