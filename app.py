@@ -1,5 +1,5 @@
 import sys, uuid, requests, os, io, re, markdown, hashlib, json
-from flask import Flask, request, jsonify, render_template, session, redirect, url_for, send_file, send_from_directory
+from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from dotenv import load_dotenv
@@ -8,8 +8,6 @@ import mimetypes
 from json_discovery import get_endpoint
 from web import web_bp
 from federation import federation_bp
-import secrets
-from werkzeug.security import generate_password_hash, check_password_hash
 import pyotp
 import threading
 import time
