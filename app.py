@@ -1,4 +1,4 @@
-import sys, uuid, requests, os, io, re, markdown, hashlib
+import sys, uuid, requests, os, io, re, markdown, hashlib, json
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for, send_file, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
@@ -11,6 +11,8 @@ from federation import federation_bp
 import secrets
 from werkzeug.security import generate_password_hash, check_password_hash
 import pyotp
+import threading
+import time
 
 
 # Config & Logging
@@ -34,6 +36,7 @@ DB_NAME = os.path.join(basedir, os.getenv("DB_NAME", "data/userserver.db"))
 SECRET_KEY = os.getenv("SECRET_KEY", "default_secret_key")
 CACHE_DIR = os.path.join(basedir, os.getenv("CACHE_DIR", "media_cache"))
 CACHE_TIME = int(os.getenv("CACHE_TIME", 3600)) # in seconden (1 uur)
+CACHE_METADATA_FILE = os.path.join(CACHE_DIR, ".cache_metadata.json")
 UPLOAD_FOLDER = os.path.join(basedir, os.getenv("UPLOAD_DIR", "uploads"))
 
 
@@ -64,6 +67,81 @@ db = SQLAlchemy(app)
 # Register blueprints
 app.register_blueprint(web_bp)
 app.register_blueprint(federation_bp)
+
+# --- CACHE CLEANUP BACKGROUND THREAD ---
+def load_cache_metadata():
+    """Load cache metadata (creation times) from file"""
+    if os.path.exists(CACHE_METADATA_FILE):
+        try:
+            with open(CACHE_METADATA_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_cache_metadata(metadata):
+    """Save cache metadata to file"""
+    try:
+        with open(CACHE_METADATA_FILE, 'w') as f:
+            json.dump(metadata, f)
+    except Exception as e:
+        print(f"[CACHE] Failed to save metadata: {e}")
+
+def cleanup_old_cache_files():
+    """Periodically remove cache files older than CACHE_TIME"""
+    print(f"[CACHE] Cleanup thread started. CACHE_TIME={CACHE_TIME}s, CACHE_DIR={CACHE_DIR}")
+    while True:
+        try:
+            if not os.path.exists(CACHE_DIR):
+                continue
+
+            current_time = datetime.utcnow().timestamp()
+            metadata = load_cache_metadata()
+            deleted_count = 0
+            files_in_dir = [f for f in os.listdir(CACHE_DIR) if os.path.isfile(os.path.join(CACHE_DIR, f)) and f != '.cache_metadata.json']
+
+            for filename in files_in_dir:
+                file_path = os.path.join(CACHE_DIR, filename)
+                creation_time = metadata.get(filename)
+
+                if creation_time is None:
+                    # File exists but no metadata - create metadata for it
+                    creation_time = current_time
+                    metadata[filename] = creation_time
+                    print(f"[CACHE] Created metadata for: {filename}")
+                else:
+                    creation_time = float(creation_time)
+                    age = current_time - creation_time
+                    should_delete = age > CACHE_TIME
+                    print(f"[CACHE] {filename}: age={int(age)}s, limit={CACHE_TIME}s, delete={should_delete}")
+
+                    if should_delete:
+                        try:
+                            os.remove(file_path)
+                            del metadata[filename]
+                            deleted_count += 1
+                            print(f"[CACHE] ✓ Deleted: {filename}")
+                        except OSError as e:
+                            print(f"[CACHE] ✗ Failed to delete {filename}: {e}")
+
+            # Clean up metadata for files that no longer exist
+            for filename in list(metadata.keys()):
+                if not os.path.exists(os.path.join(CACHE_DIR, filename)):
+                    del metadata[filename]
+
+            save_cache_metadata(metadata)
+            print(f"[CACHE] Scan complete: {len(files_in_dir)} files, {deleted_count} deleted")
+        except Exception as e:
+            print(f"[CACHE] Cleanup error: {type(e).__name__}: {e}")
+        time.sleep(3600)
+    
+
+# Start cleanup thread as daemon
+cleanup_thread = threading.Thread(target=cleanup_old_cache_files, daemon=True)
+cleanup_thread.start()
+print("[CACHE] Cleanup thread started")
+
+
 
 class Message(db.Model):
     # ID is nu: domain/uuid om conflicten te voorkomen
@@ -281,19 +359,21 @@ def media_proxy():
         return "Unauthorized", 401
     url = request.args.get("url")
     if not url: return "Missing URL", 400
-    
     file_hash = hashlib.md5(url.encode()).hexdigest()
     file_path = os.path.join(CACHE_DIR, file_hash)
-    
     # Bepaal het MIME-type op basis van de URL (bijv. image/png)
     mimetype, _ = mimetypes.guess_type(url)
     if not mimetype: mimetype = 'image/jpeg' # Fallback
 
     # 1. Serveer uit cache indien aanwezig en vers
     if os.path.exists(file_path):
-        mtime = os.path.getmtime(file_path)
-        if (datetime.utcnow().timestamp() - mtime) < CACHE_TIME:
-            return send_file(file_path, mimetype=mimetype)
+        metadata = load_cache_metadata()
+        creation_time = metadata.get(file_hash)
+        if creation_time:
+            creation_time = float(creation_time)
+            age = datetime.utcnow().timestamp() - creation_time
+            if age < CACHE_TIME:
+                return send_file(file_path, mimetype=mimetype)
 
     # 2. Downloaden als het niet in cache zit
     try:
@@ -301,6 +381,10 @@ def media_proxy():
         if r.status_code == 200:
             with open(file_path, 'wb') as f:
                 f.write(r.content)
+            # Update metadata with creation time
+            metadata = load_cache_metadata()
+            metadata[file_hash] = datetime.utcnow().timestamp()
+            save_cache_metadata(metadata)
             # Gebruik BytesIO om de zojuist gedownloade content direct te sturen
             return send_file(io.BytesIO(r.content), mimetype=mimetype)
     except Exception as e:
