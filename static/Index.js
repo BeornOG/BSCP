@@ -15,7 +15,8 @@ marked.setOptions({ gfm: true, breaks: true, headerIds: false, mangle: false });
 let userSettings = JSON.parse(localStorage.getItem('atelierSettings')) || {
     displayName: defaultDisplayName,
     theme: 'dark',
-    accentColor: '#7eafff'
+    accentColor: '#7eafff',
+    profilePic: ''
 };
 
 // Fetch settings from server on page load
@@ -27,6 +28,7 @@ async function loadSettingsFromServer() {
             userSettings.displayName = data.display_name || defaultDisplayName;
             userSettings.theme = data.theme || 'dark';
             userSettings.accentColor = data.accent_color || '#7eafff';
+            userSettings.profilePic = data.profile_pic || '';
             // Update localStorage cache
             localStorage.setItem('atelierSettings', JSON.stringify(userSettings));
             applySettings();
@@ -51,10 +53,21 @@ function applySettings() {
     document.getElementById('input-display-name').value = userSettings.displayName;
     document.getElementById('settings-display-name-preview').innerText = userSettings.displayName;
 
-    // Initials Logic
+    // Initials + Profile picture logic
     const initials = userSettings.displayName.substring(0, 2).toUpperCase();
-    document.getElementById('sidebar-avatar').innerText = initials;
-    document.getElementById('settings-avatar-preview').innerText = initials;
+    const sidebarAvatar = document.getElementById('sidebar-avatar');
+    const settingsAvatar = document.getElementById('settings-avatar-preview');
+
+    const renderAvatar = (element, imgUrl, text) => {
+        if (imgUrl) {
+            element.innerHTML = `<img src="${imgUrl}" alt="Avatar" class="w-full h-full object-cover" />`;
+        } else {
+            element.innerHTML = text;
+        }
+    };
+
+    renderAvatar(sidebarAvatar, userSettings.profilePic, initials);
+    renderAvatar(settingsAvatar, userSettings.profilePic, initials);
 
     // Update theme card visual feedback
     document.querySelectorAll('.theme-card').forEach(card => {
@@ -112,6 +125,42 @@ function selectAccent(hex) {
     }).catch(err => console.error("Failed to sync accent color:", err));
 }
 
+async function handleProfilePicUpload() {
+    const fileInput = document.getElementById('input-profile-pic');
+    if (!fileInput || fileInput.files.length === 0) return;
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    const res = await fetch('/api/settings/profile_pic', {
+        method: 'POST',
+        body: formData
+    });
+
+    if (!res.ok) {
+        console.error('Profile picture upload failed');
+        return;
+    }
+
+    const data = await res.json();
+    userSettings.profilePic = data.profile_pic || '';
+    localStorage.setItem('atelierSettings', JSON.stringify(userSettings));
+    applySettings();
+    fileInput.value = '';
+}
+
+async function removeProfilePic() {
+    const res = await fetch('/api/settings/profile_pic', { method: 'DELETE' });
+    if (!res.ok) {
+        console.error('Failed to remove profile picture');
+        return;
+    }
+
+    userSettings.profilePic = '';
+    localStorage.setItem('atelierSettings', JSON.stringify(userSettings));
+    applySettings();
+}
+
 function saveSettings() {
     userSettings.displayName = document.getElementById('input-display-name').value || defaultDisplayName;
     localStorage.setItem('atelierSettings', JSON.stringify(userSettings));
@@ -123,7 +172,8 @@ function saveSettings() {
         body: JSON.stringify({
             display_name: userSettings.displayName,
             theme: userSettings.theme,
-            accent_color: userSettings.accentColor
+            accent_color: userSettings.accentColor,
+            profile_pic: userSettings.profilePic || ""
         })
     }).catch(err => console.error("Failed to sync settings:", err));
 
@@ -185,11 +235,13 @@ async function loadChats() {
             const div = document.createElement('div');
             div.className = `${activeClasses} rounded-lg p-4 flex items-center gap-4 cursor-pointer transition-all duration-200`;
             div.onclick = () => selectChat(chatId, chatDisplay);
+            const chatAvatarHtml = chat.profile_pic
+                ? `<img src="${chat.profile_pic}" alt="${chatDisplay}" class="w-10 h-10 rounded-lg object-cover border border-outline-variant/20" loading="lazy" />`
+                : `<div class="w-10 h-10 rounded-lg bg-primary/20 text-primary flex items-center justify-center font-bold">${chatDisplay.substring(0, 2).toUpperCase()}</div>`;
+
             div.innerHTML = `
                 <div class="relative flex-shrink-0">
-                    <div class="w-10 h-10 rounded-lg bg-primary/20 text-primary flex items-center justify-center font-bold">
-                        ${chatDisplay.substring(0, 2).toUpperCase()}
-                    </div>
+                    ${chatAvatarHtml}
                 </div>
                 <div class="flex-1 min-w-0"><h3 class="font-bold text-sm truncate text-on-surface">${chatDisplay}</h3></div>
             `;
@@ -301,10 +353,16 @@ function createMessageElement(m) {
     const div = document.createElement('div');
     const displaySender = isMe ? userSettings.displayName : safeSender;
 
+    const avatarUrl = isMe ? (userSettings.profilePic || null) : (m.sender_profile_pic || null);
+    const initials = displaySender.substring(0,2).toUpperCase();
+    const avatarHtml = avatarUrl
+        ? `<img src="${avatarUrl}" alt="${displaySender}" class="w-8 h-8 rounded-lg object-cover border border-outline-variant/20" loading="lazy" />`
+        : `<div class="w-8 h-8 rounded-lg ${isMe ? 'bg-primary text-on-primary' : 'bg-surface-container-highest text-on-surface-variant'} flex items-center justify-center font-bold text-[10px]">${initials}</div>`;
+
     if (isMe) {
         div.className = "flex flex-row-reverse items-end gap-4 max-w-2xl ml-auto group mt-2";
         div.innerHTML = `
-            <div class="flex-shrink-0 mb-1"><div class="w-8 h-8 rounded-lg bg-primary text-on-primary flex items-center justify-center font-bold text-[10px]">${displaySender.substring(0,2).toUpperCase()}</div></div>
+            <div class="flex-shrink-0 mb-1">${avatarHtml}</div>
             <div class="space-y-1 items-end flex flex-col">
                 <div class="bg-primary text-on-primary p-4 rounded-2xl rounded-br-none shadow-lg text-sm">${htmlContent}</div>
                 <span class="text-[10px] text-on-surface-variant pr-1">${timeString}</span>
@@ -313,10 +371,10 @@ function createMessageElement(m) {
     } else {
         div.className = "flex items-end gap-4 max-w-2xl group mt-2";
         div.innerHTML = `
-            <div class="flex-shrink-0 mb-1"><div class="w-8 h-8 rounded-lg bg-surface-container-highest flex items-center justify-center text-[10px] font-bold">${displaySender.substring(0,2).toUpperCase()}</div></div>
+            <div class="flex-shrink-0 mb-1">${avatarHtml}</div>
             <div class="space-y-1 flex flex-col items-start">
                 <div class="bg-surface-container-high p-4 rounded-2xl rounded-bl-none shadow-sm text-sm">${htmlContent}</div>
-                <span class="text-[10px] text-on-surface-variant pl-1">${displaySender} &bull; ${timeString}</span>
+                <span class="text-[10px] text-on-surface-variant pl-1">${displaySender} • ${timeString}</span>
             </div>
         `;
     }

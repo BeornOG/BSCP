@@ -172,7 +172,7 @@ class Message(db.Model):
     is_read = db.Column(db.Boolean, default=False)
 
 class User(db.Model):
-    id = db.Column(db.String(255), primary_key=True)
+    id = db.Column(db.String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
     email = db.Column(db.String(120))
@@ -186,7 +186,7 @@ class User(db.Model):
     theme = db.Column(db.String(20), default='dark')
     accent_color = db.Column(db.String(7), default='#7eafff')
     bio = db.Column(db.Text)
-    profile_pic = text = db.Column(db.Text)
+    profile_pic = db.Column(db.Text)
     Status_Text = db.Column(db.String(32))
     created_at = db.Column(db.DateTime, default=datetime.now)
     Status_type = db.Column(db.Integer)
@@ -195,8 +195,8 @@ class User(db.Model):
     sessions = db.relationship('UserSession', backref='user', lazy=True, cascade="all, delete-orphan")
 
 class UserSession(db.Model):
-    id = db.Column(db.String(255), primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    id = db.Column(db.String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = db.Column(db.String(255), db.ForeignKey('user.id'), nullable=False)
     token = db.Column(db.String(64), unique=True, nullable=False) # Het unieke apparaat-token
     device_info = db.Column(db.String(255)) # Bijv. "Chrome on Windows"
     last_active = db.Column(db.DateTime, default=datetime.now)
@@ -253,16 +253,20 @@ def get_chats():
     chat_list = []
     for partner in sorted(partners):
         display_name = partner.split('@')[0]
+        profile_pic = None
         if '@' in partner:
             username, domain = partner.split('@', 1)
             if domain == DOMAIN:
                 user_obj = User.query.filter_by(username=username).first()
-                if user_obj and user_obj.display_name:
-                    display_name = user_obj.display_name
+                if user_obj:
+                    if user_obj.display_name:
+                        display_name = user_obj.display_name
+                    profile_pic = user_obj.profile_pic
 
         chat_list.append({
             'id': partner,
-            'display_name': display_name
+            'display_name': display_name,
+            'profile_pic': profile_pic
         })
 
     return jsonify(chat_list)
@@ -337,6 +341,7 @@ def get_messages(target):
     return jsonify([{
         "id": m.id,
         "sender": m.sender,
+        "sender_profile_pic": (lambda s: (User.query.filter_by(username=s.split('@')[0]).first().profile_pic if '@' in s and s.split('@')[1] == DOMAIN and User.query.filter_by(username=s.split('@')[0]).first() else None))(m.sender),
         "text": m.text,
         "time": m.timestamp.timestamp() # Sends as Unix Epoch (float)
     } for m in reversed(msgs)])
@@ -460,7 +465,8 @@ def get_settings():
     return jsonify({
         "display_name": user.display_name or user.username,
         "theme": user.theme or "dark",
-        "accent_color": user.accent_color or "#7eafff"
+        "accent_color": user.accent_color or "#7eafff",
+        "profile_pic": user.profile_pic or ""
     })
 
 @app.route("/api/settings", methods=["POST"])
@@ -477,9 +483,50 @@ def update_settings():
         user.theme = data['theme']
     if 'accent_color' in data:
         user.accent_color = data['accent_color']
+    if 'profile_pic' in data:
+        user.profile_pic = data['profile_pic'] or None
 
     db.session.commit()
     return jsonify({"success": True})
+
+@app.route('/api/settings/profile_pic', methods=['POST'])
+def upload_profile_pic():
+    if not hasattr(request, 'user') or request.user is None:
+        return "Unauthorized", 401
+
+    if 'file' not in request.files:
+        return "No file", 400
+
+    file = request.files['file']
+    if not file or file.filename == '':
+        return "Invalid file", 400
+
+    allowed_types = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp', 'image/svg+xml']
+    if file.mimetype not in allowed_types:
+        return "Unsupported file type", 400
+
+    filename = secure_filename(f"{uuid.uuid4()}_{file.filename}")
+    save_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(save_path)
+
+    pic_url = f"http://{DOMAIN}/uploads/{filename}"
+    user = request.user
+    user.profile_pic = pic_url
+    db.session.commit()
+
+    return jsonify({"profile_pic": pic_url})
+
+@app.route('/api/settings/profile_pic', methods=['DELETE'])
+def delete_profile_pic():
+    if not hasattr(request, 'user') or request.user is None:
+        return "Unauthorized", 401
+
+    user = request.user
+    user.profile_pic = None
+    db.session.commit()
+
+    return jsonify({"profile_pic": None})
+
 
 @app.route("/uploads/<filename>")
 def serve_upload(filename):

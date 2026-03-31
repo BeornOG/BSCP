@@ -91,12 +91,17 @@
                             <div class="relative bg-surface-container-high rounded-xl overflow-hidden">
                                 <div class="h-32 bg-primary/20 relative"></div>
                                 <div class="px-8 pb-8 flex flex-col items-center -mt-12 relative z-10">
-                                    <div id="settings-avatar-preview" class="w-24 h-24 rounded-full border-4 border-surface-container-high bg-primary text-on-primary flex items-center justify-center text-3xl font-bold shadow-2xl">
+                                    <div id="settings-avatar-preview" class="w-24 h-24 rounded-full border-4 border-surface-container-high bg-primary text-on-primary flex items-center justify-center text-3xl font-bold shadow-2xl overflow-hidden">
                                         {{ user[:2].upper() }}
                                     </div>
                                     <div class="mt-4 text-center">
                                         <h3 id="settings-display-name-preview" class="text-2xl font-semibold text-on-surface">{{ user.split('@')[0] }}</h3>
                                         <p class="text-on-surface-variant text-sm">{{ user }}</p>
+                                    </div>
+                                    <div class="mt-4 flex items-center justify-center gap-2">
+                                        <input id="input-profile-pic" type="file" accept="image/*" style="display:none;" onchange="handleProfilePicUpload()" />
+                                        <button onclick="document.getElementById('input-profile-pic').click()" class="px-4 py-2 bg-surface-container-high text-on-surface rounded-lg text-xs font-semibold">Upload Avatar</button>
+                                        <button onclick="removeProfilePic()" class="px-4 py-2 bg-error-container text-error rounded-lg text-xs font-semibold">Remove</button>
                                     </div>
                                 </div>
                             </div>

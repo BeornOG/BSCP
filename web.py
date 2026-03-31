@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 import pyotp
 import secrets
+import uuid
 
 web_bp = Blueprint('web', __name__)
 
@@ -35,6 +36,7 @@ def login():
                 # If 2FA is disabled, create session directly
                 device_token = secrets.token_urlsafe(32)
                 new_session = UserSession(
+                    id=str(uuid.uuid4()),
                     user_id=user.id,
                     token=device_token,
                     device_info=request.headers.get('User-Agent', 'Unknown Device'),
