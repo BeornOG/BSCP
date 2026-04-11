@@ -9,6 +9,7 @@ export function useMessages(chatId: string | null) {
     queryFn: () => api<Message[]>(`/api/chats/${encodeURIComponent(chatId!)}/messages`),
     enabled: !!chatId,
     refetchInterval: 1000,
+    retry: 2,
     select: (data) => [...data].sort((a, b) => a.timestamp - b.timestamp),
   });
 }
