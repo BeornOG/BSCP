@@ -56,6 +56,7 @@ class UserProfile(Schema):
     display_name = fields.String(metadata={"description": "Display name"})
     profile_pic = fields.String(allow_none=True, metadata={"description": "Profile picture URL"})
     status = fields.String(metadata={"description": "User status: online, offline, away, or dnd"})
+    is_admin = fields.Boolean(dump_only=True, metadata={"description": "Whether user is an admin on the local server"})
 
 
 class UserSettingsUpdate(Schema):

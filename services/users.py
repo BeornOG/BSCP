@@ -11,6 +11,7 @@ def serialize_profile(user, domain):
         "display_name": user.display_name or user.username,
         "profile_pic": user.profile_pic or None,
         "status": get_user_status(user),
+        "is_admin": user.is_admin,
     }
 
 
@@ -45,7 +46,9 @@ def get_profile(full_id):
             base = f"http://{domain}/api/users"
         resp = http_requests.get(f"{base}/{full_id}", timeout=3)
         if resp.status_code == 200:
-            return resp.json()
+            profile = resp.json()
+            profile["is_admin"] = False
+            return profile
         return None
     except http_requests.RequestException:
         raise ConnectionError(f"Failed to reach remote server {domain}")

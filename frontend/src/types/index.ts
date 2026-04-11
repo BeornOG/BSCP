@@ -19,6 +19,7 @@ export interface UserProfile {
   display_name: string;
   profile_pic: string | null;
   status: string;
+  is_admin: boolean;
 }
 
 export interface Invite {
