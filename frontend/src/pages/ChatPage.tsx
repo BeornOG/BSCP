@@ -11,6 +11,7 @@ import type { UserStatus } from '../components/ui/Avatar';
 export default function ChatPage() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [activeChatName, setActiveChatName] = useState('');
+  const [activeChatPic, setActiveChatPic] = useState<string | null>(null);
   const [activeChatStatus, setActiveChatStatus] = useState<UserStatus>('offline');
   const [modalImage, setModalImage] = useState<string | null>(null);
 
@@ -30,10 +31,11 @@ export default function ChatPage() {
   const uploadFile = useUploadFile();
   const { data: profile } = useProfile();
 
-  const handleSelectChat = (chat: { id: string; display_name: string; status: UserStatus }) => {
+  const handleSelectChat = (chat: { id: string; display_name: string; profile_pic: string | null; status: UserStatus }) => {
     sendMessage.clearFailed();
     setActiveChatId(chat.id);
     setActiveChatName(chat.display_name);
+    setActiveChatPic(chat.profile_pic);
     setActiveChatStatus(chat.status);
   };
 
@@ -41,6 +43,7 @@ export default function ChatPage() {
     sendMessage.clearFailed();
     setActiveChatId(receiver);
     setActiveChatName(receiver);
+    setActiveChatPic(null);
     setActiveChatStatus('offline');
   };
 
@@ -85,8 +88,13 @@ export default function ChatPage() {
         ) : (
           <>
             <div className="flex items-center gap-3 px-6 py-4 border-b border-[#232529]">
-              <Avatar name={activeChatName} size="sm" status={activeChatStatus} />
-              <h2 className="text-[#e8eaed] font-medium truncate">{activeChatName}</h2>
+              <Avatar src={activeChatPic} name={activeChatName} size="sm" status={activeChatStatus} />
+              <div className="min-w-0">
+                <h2 className="text-[#e8eaed] font-medium truncate">{activeChatName}</h2>
+                {activeChatId !== activeChatName && (
+                  <p className="text-[#71747a] text-xs truncate">{activeChatId}</p>
+                )}
+              </div>
             </div>
 
             <MessageList
