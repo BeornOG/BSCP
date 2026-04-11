@@ -2,6 +2,11 @@
 
 import requests
 import json
+import time
+
+# In-memory cache: key = (domain, server_type), value = (config, timestamp)
+_discovery_cache = {}
+_CACHE_TTL = 60  # seconds
 
 
 def parse_config(json_text: str) -> dict:
@@ -22,7 +27,14 @@ def parse_config(json_text: str) -> dict:
 
 
 def discover_server(domain: str, server_type: str = "userserver"):
-    """Fetch and parse JSON config from .well-known endpoint"""
+    """Fetch and parse JSON config from .well-known endpoint (cached for 60s)"""
+    cache_key = (domain, server_type)
+    cached = _discovery_cache.get(cache_key)
+    if cached:
+        config, ts = cached
+        if time.time() - ts < _CACHE_TTL:
+            return config
+
     try:
         url = f"http://{domain}/.well-known/BSCP/{server_type}.json"
         print(f"Fetching: {url}")  # for debugging
@@ -41,6 +53,7 @@ def discover_server(domain: str, server_type: str = "userserver"):
         config = parse_config(response.text)
         if config:
             print("Successfully parsed JSON config")
+            _discovery_cache[cache_key] = (config, time.time())
             return config
         else:
             print("Parsed config is empty")
