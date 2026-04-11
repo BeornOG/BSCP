@@ -79,6 +79,6 @@ def get_endpoint(domain: str, server_type: str, endpoint_name: str):
     elif not base.endswith("/") and not path.startswith("/"):
         base += "/"
 
-    full_url = base + path
+    full_url = (base + path).rstrip("/")
     print(f"Resolved endpoint '{endpoint_name}' -> {full_url}")
     return full_url
