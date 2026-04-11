@@ -50,7 +50,7 @@ export default function AdminPage() {
                       </Badge>
                     </td>
                     <td className="py-3 text-[#71747a]">
-                      {new Date(invite.expires_at * 1000).toLocaleDateString()}
+                      {invite.expires_at ? new Date(invite.expires_at * 1000).toLocaleDateString() : 'Never'}
                     </td>
                     <td className="py-3 text-[#71747a]">{invite.used_by || '-'}</td>
                   </tr>

@@ -12,13 +12,14 @@ const Card: FC<CardProps> = ({ className = '', children }) => (
 );
 
 interface CardHeaderProps {
-  title: string;
+  title?: string;
   action?: ReactNode;
+  children?: ReactNode;
 }
 
-const CardHeader: FC<CardHeaderProps> = ({ title, action }) => (
+const CardHeader: FC<CardHeaderProps> = ({ title, action, children }) => (
   <div className="flex items-center justify-between px-6 py-4 border-b border-[#232529]">
-    <h3 className="text-sm font-semibold text-[#e8eaed]">{title}</h3>
+    {children ?? <h3 className="text-sm font-semibold text-[#e8eaed]">{title}</h3>}
     {action}
   </div>
 );
