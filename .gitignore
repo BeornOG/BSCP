@@ -11,3 +11,4 @@ uploads/
 .claude/
 frontend/node_modules/
 frontend/.vite/
+static/
