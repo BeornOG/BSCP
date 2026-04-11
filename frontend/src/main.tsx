@@ -5,6 +5,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import './index.css'
 import App from './App'
 
+// Apply saved theme/accent from localStorage before first paint
+const savedTheme = localStorage.getItem('theme') || 'dark'
+document.body.classList.add(`theme-${savedTheme}`)
+const savedAccent = localStorage.getItem('accent_color')
+if (savedAccent) document.documentElement.style.setProperty('--accent', savedAccent)
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

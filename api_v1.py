@@ -234,7 +234,7 @@ class CurrentUserResource(MethodView):
         _require_auth()
         from app import DOMAIN
         user = request.user
-        return _serialize_user(user, DOMAIN, full=True)
+        return _serialize_user(user, DOMAIN)
 
     @users_blp.arguments(UserSettingsUpdate)
     @users_blp.response(200, UserObject)
@@ -247,13 +247,9 @@ class CurrentUserResource(MethodView):
 
         if "display_name" in data:
             user.display_name = data["display_name"]
-        if "theme" in data:
-            user.theme = data["theme"]
-        if "accent_color" in data:
-            user.accent_color = data["accent_color"]
 
         db.session.commit()
-        return _serialize_user(user, DOMAIN, full=True)
+        return _serialize_user(user, DOMAIN)
 
 
 @users_blp.route("/me/picture")
@@ -306,7 +302,7 @@ class PublicUserProfile(MethodView):
         user = db.session.query(User).filter_by(username=username).first()
         if not user:
             abort(404, message="User not found")
-        return _serialize_user(user, DOMAIN, full=False)
+        return _serialize_user(user, DOMAIN)
 
 
 @users_blp.route("/batch")
@@ -645,7 +641,7 @@ def _require_admin():
         abort(403, message="Admin access required")
 
 
-def _serialize_user(user, domain, full=False):
+def _serialize_user(user, domain):
     """Convert a User model to a standardized dict."""
     result = {
         "id": user.id,
@@ -657,11 +653,6 @@ def _serialize_user(user, domain, full=False):
         "is_admin": user.is_admin,
         "is_2fa_enabled": user.is_2fa_enabled,
     }
-    if full:
-        result["settings"] = {
-            "theme": user.theme or "dark",
-            "accent_color": user.accent_color or "#7eafff",
-        }
     return result
 
 

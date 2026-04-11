@@ -13,7 +13,7 @@ export function useProfile() {
 export function useUpdateProfile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { display_name?: string; theme?: string; accent_color?: string }) =>
+    mutationFn: (data: { display_name?: string }) =>
       api<UserProfile>('/api/users/me', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

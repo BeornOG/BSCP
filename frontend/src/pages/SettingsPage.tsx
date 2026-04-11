@@ -13,29 +13,29 @@ export default function SettingsPage() {
   const logout = useLogout();
 
   const [displayName, setDisplayName] = useState('');
-  const [theme, setTheme] = useState('dark');
-  const [accentColor, setAccentColor] = useState('#6e8efb');
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
+  const [accentColor, setAccentColor] = useState(() => localStorage.getItem('accent_color') || '#6e8efb');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (profile) {
       setDisplayName(profile.display_name);
-      setTheme(profile.settings?.theme || 'dark');
-      setAccentColor(profile.settings?.accent_color || '#6e8efb');
     }
   }, [profile]);
 
   useEffect(() => {
     document.body.classList.remove('theme-dark', 'theme-light');
     document.body.classList.add(`theme-${theme}`);
+    localStorage.setItem('theme', theme);
   }, [theme]);
 
   useEffect(() => {
     document.documentElement.style.setProperty('--accent', accentColor);
+    localStorage.setItem('accent_color', accentColor);
   }, [accentColor]);
 
   const handleSave = () => {
-    updateProfile.mutate({ display_name: displayName, theme, accent_color: accentColor });
+    updateProfile.mutate({ display_name: displayName });
   };
 
   const handlePicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

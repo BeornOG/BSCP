@@ -52,14 +52,11 @@ class InviteObject(Schema):
 class UserProfileResponse(Schema):
     """Full profile of the authenticated user."""
     user = fields.Nested(UserObject, metadata={"description": "User object"})
-    settings = fields.Dict(keys=fields.String(), values=fields.String(), metadata={"description": "User preferences"})
 
 
 class UserSettingsUpdate(Schema):
     """Request body for updating user settings."""
     display_name = fields.String(metadata={"description": "New display name"})
-    theme = fields.String(metadata={"description": "Theme: 'dark' or 'light'"})
-    accent_color = fields.String(metadata={"description": "Accent color hex code"})
 
 
 class ProfilePicResponse(Schema):
