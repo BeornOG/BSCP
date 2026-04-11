@@ -7,6 +7,13 @@ web_bp = Blueprint('web', __name__)
 
 @web_bp.before_app_request
 def load_logged_in_user():
+    # Skip session lookup for static files and non-API routes
+    path = request.path
+    if not (path.startswith("/api/") or path.startswith("/federation/")
+            or path.startswith("/media/") or path.startswith("/uploads/")):
+        request.user = None
+        return
+
     from app import UserSession
     db = current_app.extensions['sqlalchemy']
     token = session.get('session_token')
