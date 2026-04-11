@@ -49,9 +49,12 @@ class InviteObject(Schema):
 # User Profile Schemas
 # ---------------------------------------------------------------------------
 
-class UserProfileResponse(Schema):
-    """Full profile of the authenticated user."""
-    user = fields.Nested(UserObject, metadata={"description": "User object"})
+class UserProfile(Schema):
+    """Public user profile — never exposes internal IDs."""
+    username = fields.String(metadata={"description": "Federated identity (username@domain)"})
+    display_name = fields.String(metadata={"description": "Display name"})
+    profile_pic = fields.String(allow_none=True, metadata={"description": "Profile picture URL"})
+    status = fields.String(metadata={"description": "User status: online, offline, away, or dnd"})
 
 
 class UserSettingsUpdate(Schema):
@@ -122,15 +125,9 @@ class SetupStatusResponse(Schema):
 # Messaging Schemas
 # ---------------------------------------------------------------------------
 
-class SendMessageRequest(Schema):
-    """Request to send a new message."""
-    receiver = fields.String(required=True, metadata={"description": "Receiver username or federated ID"})
+class SendMessageBody(Schema):
+    """Request body for sending a message (receiver is in the URL)."""
     text = fields.String(required=True, metadata={"description": "Message content"})
-
-
-class SendMessageResponse(Schema):
-    """Response after sending a message."""
-    message = fields.Nested(MessageObject, metadata={"description": "The sent message"})
 
 
 class MessagesQueryArgs(Schema):
@@ -147,6 +144,7 @@ class MessagesQueryArgs(Schema):
 class UploadResponse(Schema):
     """Response after uploading a file."""
     url = fields.String(metadata={"description": "Direct URL to the uploaded file"})
+    mimetype = fields.String(metadata={"description": "MIME type of the uploaded file"})
     markdown = fields.String(metadata={"description": "Markdown embed tag for the file"})
 
 

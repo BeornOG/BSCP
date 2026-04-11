@@ -90,9 +90,14 @@ const ChatSidebar: FC<ChatSidebarProps> = ({
             }`}
           >
             <Avatar size="sm" src={chat.profile_pic} name={chat.display_name} />
-            <span className="truncate text-sm font-medium text-[#e8eaed]">
-              {chat.display_name}
-            </span>
+            <div className="min-w-0">
+              <span className="block truncate text-sm font-medium text-[#e8eaed]">
+                {chat.display_name}
+              </span>
+              <span className="block truncate text-xs text-[#71747a]">
+                {chat.id}
+              </span>
+            </div>
           </button>
         ))}
       </div>

@@ -102,7 +102,7 @@ app.register_blueprint(web_bp)
 app.register_blueprint(federation_bp)
 
 # Register flask-smorest API blueprints
-from api_v1 import ALL_BLUEPRINTS
+from routes import ALL_BLUEPRINTS
 for blp in ALL_BLUEPRINTS:
     api.register_blueprint(blp)
 
@@ -221,6 +221,13 @@ class UserSession(db.Model):
     device_info = db.Column(db.String(255)) # Bijv. "Chrome on Windows"
     last_active = db.Column(db.DateTime, default=datetime.now)
     expires_at = db.Column(db.DateTime, nullable=False)
+
+class Upload(db.Model):
+    id = db.Column(db.String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
+    filename = db.Column(db.String(255), nullable=False)
+    mimetype = db.Column(db.String(100), nullable=False)
+    uploaded_by = db.Column(db.String(255), db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now)
 
 class InviteCode(db.Model):
     id = db.Column(db.Integer, primary_key=True)

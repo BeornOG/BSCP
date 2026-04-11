@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useChats } from '../hooks/useChats';
 import { useMessages, useSendMessage, useUploadFile } from '../hooks/useMessages';
 import { useProfile } from '../hooks/useProfile';
@@ -13,17 +13,29 @@ export default function ChatPage() {
   const [modalImage, setModalImage] = useState<string | null>(null);
 
   const { data: chats, isLoading: chatsLoading } = useChats();
-  const { data: messages, isLoading: messagesLoading } = useMessages(activeChatId);
+  const { data: serverMessages, isLoading: messagesLoading } = useMessages(activeChatId);
   const sendMessage = useSendMessage();
+
+  const messages = useMemo(() => {
+    const server = serverMessages || [];
+    // Filter out pending messages that already appear in server data
+    const local = sendMessage.localMessages.filter((lm) =>
+      lm.id.startsWith('failed-') ||
+      !server.some((sm) => sm.sender === lm.sender && sm.text === lm.text)
+    );
+    return [...server, ...local].sort((a, b) => a.timestamp - b.timestamp);
+  }, [serverMessages, sendMessage.localMessages]);
   const uploadFile = useUploadFile();
   const { data: profile } = useProfile();
 
   const handleSelectChat = (chat: { id: string; display_name: string }) => {
+    sendMessage.clearFailed();
     setActiveChatId(chat.id);
     setActiveChatName(chat.display_name);
   };
 
   const handleNewChat = (receiver: string) => {
+    sendMessage.clearFailed();
     setActiveChatId(receiver);
     setActiveChatName(receiver);
   };
@@ -31,10 +43,9 @@ export default function ChatPage() {
   const handleSend = (text: string) => {
     if (!activeChatId || !profile) return;
     sendMessage.mutate({
-      receiver: activeChatName,
       text,
       chatId: activeChatId,
-      currentUser: profile.full_id,
+      currentUser: profile.username,
     });
   };
 
@@ -43,10 +54,9 @@ export default function ChatPage() {
       onSuccess: (data) => {
         if (data.markdown && activeChatId && profile) {
           sendMessage.mutate({
-            receiver: activeChatName,
             text: data.markdown,
             chatId: activeChatId,
-            currentUser: profile.full_id,
+            currentUser: profile.username,
           });
         }
       },
@@ -76,8 +86,8 @@ export default function ChatPage() {
             </div>
 
             <MessageList
-              messages={messages || []}
-              currentUser={profile?.full_id || ''}
+              messages={messages}
+              currentUser={profile?.username || ''}
               isLoading={messagesLoading}
               onImageClick={(src) => setModalImage(src)}
             />
@@ -85,7 +95,7 @@ export default function ChatPage() {
             <MessageInput
               onSend={handleSend}
               onFileUpload={handleFileUpload}
-              disabled={sendMessage.isPending || uploadFile.isPending}
+              disabled={uploadFile.isPending}
             />
           </>
         )}
