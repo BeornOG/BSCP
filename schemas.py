@@ -154,12 +154,3 @@ class UploadResponse(Schema):
 # Admin Schemas
 # ---------------------------------------------------------------------------
 
-class BatchProfileRequest(Schema):
-    """Request to fetch profiles for multiple users."""
-    senders = fields.List(fields.String(), required=True, metadata={"description": "List of federated user IDs"})
-
-
-class BatchProfileResponse(Schema):
-    """Map of user ID to profile picture URL."""
-    # Dynamic keys, represented as dict
-    pass

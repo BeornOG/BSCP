@@ -5,7 +5,7 @@ from flask import request, current_app
 from werkzeug.utils import secure_filename
 import uuid, os
 
-from schemas import UserProfile, UserSettingsUpdate, ProfilePicResponse, BatchProfileRequest
+from schemas import UserProfile, UserSettingsUpdate, ProfilePicResponse
 from routes import require_auth, require_admin
 from services.users import get_profile, serialize_profile
 
@@ -125,29 +125,6 @@ class UserProfileResource(MethodView):
         user.sessions = []
         db.session.commit()
         return {"message": f"User {user.username} has been deactivated."}
-
-
-# ── /batch ────────────────────────────────────────────────────────────────
-
-@users_blp.route("/batch")
-class BatchProfilesResource(MethodView):
-    @users_blp.arguments(BatchProfileRequest)
-    @users_blp.response(200)
-    def post(self, data):
-        """Fetch profiles for multiple users at once"""
-        require_auth()
-        senders = data.get("senders", [])
-        profiles = {}
-
-        for sender in senders:
-            if "@" not in sender:
-                continue
-            try:
-                profiles[sender] = get_profile(sender)
-            except ConnectionError:
-                profiles[sender] = None
-
-        return profiles
 
 
 # ── / (admin list) ────────────────────────────────────────────────────────

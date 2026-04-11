@@ -38,20 +38,16 @@ const MessageList: FC<MessageListProps> = ({
       profilePicCache.current[s] = '';
     });
 
-    fetch('/api/users/batch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ senders: newSenders }),
-    })
-      .then((res) => res.json())
-      .then((data: Record<string, string>) => {
-        Object.entries(data).forEach(([sender, pic]) => {
-          profilePicCache.current[sender] = pic;
-        });
-      })
-      .catch(() => {
-        // Silently fail - avatars will use fallback
-      });
+    newSenders.forEach((sender) => {
+      fetch(`/api/users/${encodeURIComponent(sender)}`)
+        .then((res) => res.ok ? res.json() : null)
+        .then((data) => {
+          if (data?.profile_pic) {
+            profilePicCache.current[sender] = data.profile_pic;
+          }
+        })
+        .catch(() => {});
+    });
   }, [messages]);
 
   // Track scroll position to decide auto-scroll
