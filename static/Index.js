@@ -1,4 +1,6 @@
-// --- APP STATE & MESSAGING LOGIC ---
+// Cache for profile pictures by sender
+let profilePictureCache = {};
+
 let currentChat = null;
 let currentChatDisplayName = null;
 let chatSessionId = 0; // NEW: Tracks the active chat to prevent data bleed
@@ -22,7 +24,7 @@ let userSettings = JSON.parse(localStorage.getItem('atelierSettings')) || {
 // Fetch settings from server on page load
 async function loadSettingsFromServer() {
     try {
-        const res = await fetch('/api/settings');
+        const res = await fetch('/api/userprofile/');
         if (res.ok) {
             const data = await res.json();
             userSettings.displayName = data.display_name || defaultDisplayName;
@@ -106,7 +108,7 @@ function selectTheme(theme) {
     });
 
     // Sync to server
-    fetch('/api/settings', {
+    fetch('/api/userprofile/', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ theme: userSettings.theme })
@@ -118,7 +120,7 @@ function selectAccent(hex) {
     document.documentElement.style.setProperty('--dynamic-primary', hex); // Live preview
 
     // Sync to server
-    fetch('/api/settings', {
+    fetch('/api/userprofile/', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ accent_color: userSettings.accentColor })
@@ -132,7 +134,7 @@ async function handleProfilePicUpload() {
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
 
-    const res = await fetch('/api/settings/profile_pic', {
+    const res = await fetch('/api/userprofile/picture', {
         method: 'POST',
         body: formData
     });
@@ -150,7 +152,7 @@ async function handleProfilePicUpload() {
 }
 
 async function removeProfilePic() {
-    const res = await fetch('/api/settings/profile_pic', { method: 'DELETE' });
+    const res = await fetch('/api/userprofile/picture', { method: 'DELETE' });
     if (!res.ok) {
         console.error('Failed to remove profile picture');
         return;
@@ -166,7 +168,7 @@ function saveSettings() {
     localStorage.setItem('atelierSettings', JSON.stringify(userSettings));
 
     // Sync to server
-    fetch('/api/settings', {
+    fetch('/api/userprofile/', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -221,12 +223,19 @@ function uiStartNewChat() {
     ncu.style.display = 'block'; ncu.value = ''; ncu.focus();
 }
 
+// Cache for loaded chat profile pictures
+let chatProfileCache = {};
+
 async function loadChats() {
     try {
         const res = await fetch('/api/chats');
         const chats = await res.json();
         const list = document.getElementById('chat-list');
         list.innerHTML = '';
+
+        // Collect chat IDs that need profile fetch (not in cache)
+        const chatIdsToFetch = [];
+
         chats.forEach(chat => {
             const chatId = (typeof chat === 'string') ? chat : chat.id;
             const chatDisplay = (typeof chat === 'string') ? chat.split('@')[0] : (chat.display_name || chatId.split('@')[0]);
@@ -234,19 +243,48 @@ async function loadChats() {
             const activeClasses = isActive ? 'bg-surface-container-highest border-l-4 border-primary' : 'hover:bg-surface-container-high';
             const div = document.createElement('div');
             div.className = `${activeClasses} rounded-lg p-4 flex items-center gap-4 cursor-pointer transition-all duration-200`;
+            div.id = `chat-${chatId.replace(/[^\w-]/g, '_')}`;
             div.onclick = () => selectChat(chatId, chatDisplay);
-            const chatAvatarHtml = chat.profile_pic
-                ? `<img src="${chat.profile_pic}" alt="${chatDisplay}" class="w-10 h-10 rounded-lg object-cover border border-outline-variant/20" loading="lazy" />`
-                : `<div class="w-10 h-10 rounded-lg bg-primary/20 text-primary flex items-center justify-center font-bold">${chatDisplay.substring(0, 2).toUpperCase()}</div>`;
+
+            // Check if already have cached profile picture
+            let avatarHtml;
+            if (chatProfileCache[chatId]) {
+                avatarHtml = `<img src="${chatProfileCache[chatId]}" alt="${chatDisplay}" class="w-10 h-10 rounded-lg object-cover border border-outline-variant/20" loading="lazy" />`;
+            } else {
+                // Show placeholder, mark for fetch
+                avatarHtml = `<div class="w-10 h-10 rounded-lg bg-primary/20 text-primary flex items-center justify-center font-bold avatar-container" data-chat="${chatId}">${chatDisplay.substring(0, 2).toUpperCase()}</div>`;
+                chatIdsToFetch.push(chatId);
+            }
 
             div.innerHTML = `
                 <div class="relative flex-shrink-0">
-                    ${chatAvatarHtml}
+                    ${avatarHtml}
                 </div>
                 <div class="flex-1 min-w-0"><h3 class="font-bold text-sm truncate text-on-surface">${chatDisplay}</h3></div>
             `;
             list.appendChild(div);
         });
+
+        // Fetch only profiles not in cache
+        if (chatIdsToFetch.length > 0) {
+            fetch('/api/userprofile/batch', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ senders: chatIdsToFetch })
+            }).then(res => res.json()).then(profiles => {
+                // Update only new profile pictures
+                Object.entries(profiles).forEach(([chatId, pic]) => {
+                    if (!pic || chatProfileCache[chatId]) return; // Skip if no pic or already cached
+
+                    chatProfileCache[chatId] = pic; // Cache it
+                    const el = document.querySelector(`[data-chat="${chatId}"]`);
+                    if (el) {
+                        const chatDisplay = chatId.split('@')[0];
+                        el.innerHTML = `<img src="${pic}" alt="${chatDisplay}" class="w-full h-full object-cover rounded-lg border border-outline-variant/20" loading="lazy" />`;
+                    }
+                });
+            }).catch(err => console.error("Failed to fetch chat profiles:", err));
+        }
     } catch (err) {
         console.error("Failed to load chats:", err);
     }
@@ -263,8 +301,24 @@ function selectChat(chatId, chatDisplayName) {
     document.getElementById('chat-header').innerText = currentChatDisplayName;
     document.getElementById('new-chat-user').style.display = 'none';
     document.getElementById('messages').innerHTML = ''; // Clear container
-    loadMessages(); 
+
+    loadMessages();
     loadChats();
+
+    // Replace placeholder avatar (div with person icon or initials) AFTER loadChats() rebuilds the list
+    //setTimeout(() => {
+        if (chatProfileCache[chatId]) {
+            const avatarContainer = document.querySelector(`[Data-avatar-chatheader]`);
+            if (avatarContainer) {
+                const img = document.createElement('img');
+                img.src = chatProfileCache[chatId];
+                img.alt = currentChatDisplayName;
+                img.className = 'w-10 h-10 rounded-lg object-cover border border-outline-variant/20';
+                img.loading = 'lazy';
+                avatarContainer.replaceWith(img);
+            }
+        }
+    //}, 50);
 }
 
 function openImageModal(src) {
@@ -355,14 +409,24 @@ function createMessageElement(m) {
 
     const avatarUrl = isMe ? (userSettings.profilePic || null) : (m.sender_profile_pic || null);
     const initials = displaySender.substring(0,2).toUpperCase();
-    const avatarHtml = avatarUrl
-        ? `<img src="${avatarUrl}" alt="${displaySender}" class="w-8 h-8 rounded-lg object-cover border border-outline-variant/20" loading="lazy" />`
-        : `<div class="w-8 h-8 rounded-lg ${isMe ? 'bg-primary text-on-primary' : 'bg-surface-container-highest text-on-surface-variant'} flex items-center justify-center font-bold text-[10px]">${initials}</div>`;
+
+    // Create avatar with placeholder and data attributes for later update
+    let avatarHtml;
+    if (avatarUrl) {
+        avatarHtml = `<img src="${avatarUrl}" alt="${displaySender}" class="w-8 h-8 rounded-lg object-cover border border-outline-variant/20" loading="lazy" />`;
+    } else {
+        // Placeholder with data attributes to identify and replace later
+        if (isMe) {
+            avatarHtml = `<div class="w-8 h-8 rounded-lg bg-primary text-on-primary flex items-center justify-center font-bold text-[10px]" data-sender="${m.sender}">${initials}</div>`;
+        } else {
+            avatarHtml = `<span class="material-symbols-outlined w-8 h-8 rounded-lg bg-surface-container-highest text-on-surface-variant flex items-center justify-center text-5xl" data-sender="${m.sender}" style="font-size: 20px;">person</span>`;
+        }
+    }
 
     if (isMe) {
         div.className = "flex flex-row-reverse items-end gap-4 max-w-2xl ml-auto group mt-2";
         div.innerHTML = `
-            <div class="flex-shrink-0 mb-1">${avatarHtml}</div>
+            <div class="flex-shrink-0 mb-1 avatar-container" data-sender="${m.sender}">${avatarHtml}</div>
             <div class="space-y-1 items-end flex flex-col">
                 <div class="bg-primary text-on-primary p-4 rounded-2xl rounded-br-none shadow-lg text-sm">${htmlContent}</div>
                 <span class="text-[10px] text-on-surface-variant pr-1">${timeString}</span>
@@ -371,7 +435,7 @@ function createMessageElement(m) {
     } else {
         div.className = "flex items-end gap-4 max-w-2xl group mt-2";
         div.innerHTML = `
-            <div class="flex-shrink-0 mb-1">${avatarHtml}</div>
+            <div class="flex-shrink-0 mb-1 avatar-container" data-sender="${m.sender}">${avatarHtml}</div>
             <div class="space-y-1 flex flex-col items-start">
                 <div class="bg-surface-container-high p-4 rounded-2xl rounded-bl-none shadow-sm text-sm">${htmlContent}</div>
                 <span class="text-[10px] text-on-surface-variant pl-1">${displaySender} • ${timeString}</span>
@@ -400,23 +464,23 @@ async function loadMessages(fetchOlder = false) {
 
     try {
         let url = `/api/messages/${encodeURIComponent(requestedChat)}`;
-        
+
         const params = new URLSearchParams();
         if (fetchOlder && oldestMsgTime) params.append('before', oldestMsgTime);
         if (!fetchOlder && newestMsgTime) params.append('after', newestMsgTime);
-        
+
         const qs = params.toString();
         if (qs) url += `?${qs}`;
 
         const res = await fetch(url);
-        
+
         // RACE CONDITION CHECK: Did the user switch chats while waiting for the network?
-        if (chatSessionId !== mySession) return; 
+        if (chatSessionId !== mySession) return;
 
         if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
-        
+
         let data = await res.json();
-        
+
         // DOUBLE CHECK: Just in case JSON parsing was delayed
         if (chatSessionId !== mySession) return;
 
@@ -433,10 +497,56 @@ async function loadMessages(fetchOlder = false) {
         let addedAny = false;
         let elementsToAdd = [];
 
+        // Collect unique senders for batch profile fetch
+        const uniqueSenders = new Set();
+        msgs.forEach(m => {
+            const msgId = m.id || `${m.time}-${m.text}`;
+            if (!loadedMessageIds.has(msgId)) {
+                if (m.sender) uniqueSenders.add(m.sender);
+            }
+        });
+
+        // Fetch profile pictures in background (don't wait)
+        if (uniqueSenders.size > 0) {
+            fetch('/api/userprofile/batch', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ senders: Array.from(uniqueSenders) })
+            }).then(res => res.json()).then(profiles => {
+                // Update message avatars with profile pictures
+                if (chatSessionId !== mySession) return;
+
+                Object.entries(profiles).forEach(([sender, pic]) => {
+                    if (!pic) return;
+
+                    // Cache the picture
+                    
+                    profilePictureCache[sender] = pic;
+
+                    // Replace all placeholders for this sender
+                    document.querySelectorAll(`[data-sender="${sender}"]`).forEach(el => {
+                        const displayName = sender.split('@')[0];
+
+                        // Check if placeholder is span or div
+                        if (el.tagName === 'SPAN' || el.tagName === 'DIV') {
+                            // Create image element
+                            const img = document.createElement('img');
+                            img.src = pic;
+                            img.alt = displayName;
+                            img.className = 'w-8 h-8 rounded-lg object-cover border border-outline-variant/20';
+                            img.loading = 'lazy';
+                            // Replace placeholder with image
+                            el.replaceWith(img);
+                        }
+                    });
+                });
+            }).catch(err => console.error("Failed to fetch profiles:", err));
+        }
+
         msgs.forEach(m => {
             const msgId = m.id || `${m.time}-${m.text}`;
             if (loadedMessageIds.has(msgId)) return;
-            
+
             loadedMessageIds.add(msgId);
             addedAny = true;
 

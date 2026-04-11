@@ -251,22 +251,21 @@ def get_chats():
 
     # Return structured chat entries with display names instead of raw IDs
     chat_list = []
+
     for partner in sorted(partners):
         display_name = partner.split('@')[0]
-        profile_pic = None
         if '@' in partner:
             username, domain = partner.split('@', 1)
+            # For local users: get display name from database
             if domain == DOMAIN:
                 user_obj = User.query.filter_by(username=username).first()
-                if user_obj:
-                    if user_obj.display_name:
-                        display_name = user_obj.display_name
-                    profile_pic = user_obj.profile_pic
+                if user_obj and user_obj.display_name:
+                    display_name = user_obj.display_name
 
         chat_list.append({
             'id': partner,
             'display_name': display_name,
-            'profile_pic': profile_pic
+            'profile_pic': None  # Load separately in frontend for speed
         })
 
     return jsonify(chat_list)
@@ -333,15 +332,10 @@ def get_messages(target):
 
     msgs = query.order_by(Message.timestamp.desc()).limit(limit).all()
 
-    #print(f"[MESSAGES] Query for user '{me}' talking to '{target}' (normalized to '{target_with_domain}')")
-    #print(f"[MESSAGES] Found {len(msgs)} messages")
-    #for m in msgs:
-        #print(f"  - {m.sender} -> {m.receiver}: {m.text[:50] if m.text else 'NO TEXT'}")
-
     return jsonify([{
         "id": m.id,
         "sender": m.sender,
-        "sender_profile_pic": (lambda s: (User.query.filter_by(username=s.split('@')[0]).first().profile_pic if '@' in s and s.split('@')[1] == DOMAIN and User.query.filter_by(username=s.split('@')[0]).first() else None))(m.sender),
+        "sender_profile_pic": None,  # Load separately on frontend for speed
         "text": m.text,
         "time": m.timestamp.timestamp() # Sends as Unix Epoch (float)
     } for m in reversed(msgs)])
@@ -405,8 +399,6 @@ def send_message():
 
 @app.route("/media/proxy")
 def media_proxy():
-    if not hasattr(request, 'user') or request.user is None:
-        return "Unauthorized", 401
     url = request.args.get("url")
     if not url: return "Missing URL", 400
     file_hash = hashlib.md5(url.encode()).hexdigest()
@@ -456,21 +448,125 @@ def upload_file():
     file_url = f"http://{DOMAIN}/uploads/{filename}"
     return jsonify({"markdown": f"![image]({file_url})", "url": file_url})
 
-@app.route("/api/settings", methods=["GET"])
-def get_settings():
+# --- USER PROFILE ENDPOINTS ---
+
+@app.route("/api/userprofile/", methods=["GET"])
+def get_userprofile():
+    # Allow fetching own profile if authenticated
+    # Also allow fetching other user profile by username param (public, for federation)
+    username_param = request.args.get("user")
+
+    if username_param:
+        # Public endpoint - get profile by username (no auth required)
+        user = User.query.filter_by(username=username_param).first()
+        if not user:
+            return "User not found", 404
+        return jsonify({
+            "display_name": user.display_name or user.username,
+            "profile_pic": user.profile_pic or ""
+        })
+    else:
+        # Private endpoint - get own profile (auth required)
+        if not hasattr(request, 'user') or request.user is None:
+            return "Unauthorized", 401
+
+        user = request.user
+        return jsonify({
+            "display_name": user.display_name or user.username,
+            "theme": user.theme or "dark",
+            "accent_color": user.accent_color or "#7eafff",
+            "profile_pic": user.profile_pic or ""
+        })
+
+@app.route("/api/userprofile/batch", methods=["POST"])
+def get_batch_profiles():
+    """Fetch profile pictures for batch of users"""
     if not hasattr(request, 'user') or request.user is None:
         return "Unauthorized", 401
 
-    user = request.user
-    return jsonify({
-        "display_name": user.display_name or user.username,
-        "theme": user.theme or "dark",
-        "accent_color": user.accent_color or "#7eafff",
-        "profile_pic": user.profile_pic or ""
-    })
+    data = request.get_json()
+    senders = data.get('senders', [])  # List of "username@domain"
 
-@app.route("/api/settings", methods=["POST"])
-def update_settings():
+    profiles = {}
+
+    # Separate local and remote senders
+    remote_senders = []
+    for sender in senders:
+        if '@' not in sender:
+            continue
+        username, domain = sender.rsplit('@', 1)
+
+        if domain == DOMAIN:
+            # Local user
+            user = User.query.filter_by(username=username).first()
+            if user:
+                profiles[sender] = user.profile_pic
+        else:
+            # Remote user - collect for batch fetch
+            remote_senders.append((sender, username, domain))
+
+    # Batch fetch remote profiles
+    if remote_senders:
+        for sender, username, domain in remote_senders:
+            try:
+                profile_url = f"http://{domain}/api/userprofile/?user={username}"
+                resp = requests.get(profile_url, timeout=1)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    profiles[sender] = data.get('profile_pic')
+            except Exception:
+                profiles[sender] = None
+
+    return jsonify(profiles)
+
+
+def prefetch_profiles():
+    """Pre-cache multiple remote user profiles at once"""
+    if not hasattr(request, 'user') or request.user is None:
+        return "Unauthorized", 401
+
+    data = request.get_json()
+    users = data.get('users', [])  # List of "username@domain"
+
+    for sender in users:
+        if '@' not in sender:
+            continue
+
+        username, domain = sender.rsplit('@', 1)
+
+        # Skip if already cached
+        if domain == DOMAIN:
+            continue
+
+        existing = User.query.filter_by(id=f"{domain}/{username}").first()
+        if existing:
+            continue
+
+        # Fetch and cache
+        try:
+            profile_url = f"http://{domain}/api/userprofile/?user={username}"
+            resp = requests.get(profile_url, timeout=1)
+            if resp.status_code == 200:
+                data = resp.json()
+                remote_user = User(
+                    id=f"{domain}/{username}",
+                    username=username,
+                    password_hash="remote_user",
+                    display_name=data.get('display_name', username),
+                    profile_pic=data.get('profile_pic')
+                )
+                try:
+                    db.session.add(remote_user)
+                    db.session.commit()
+                except:
+                    db.session.rollback()
+        except Exception:
+            pass
+
+    return jsonify({"status": "ok"})
+
+
+def update_userprofile():
     if not hasattr(request, 'user') or request.user is None:
         return "Unauthorized", 401
 
@@ -489,8 +585,8 @@ def update_settings():
     db.session.commit()
     return jsonify({"success": True})
 
-@app.route('/api/settings/profile_pic', methods=['POST'])
-def upload_profile_pic():
+@app.route('/api/userprofile/picture', methods=['POST'])
+def upload_userprofile_picture():
     if not hasattr(request, 'user') or request.user is None:
         return "Unauthorized", 401
 
@@ -509,15 +605,18 @@ def upload_profile_pic():
     save_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(save_path)
 
-    pic_url = f"http://{DOMAIN}/uploads/{filename}"
+    # Store as proxied URL with full domain for instance-wide compatibility
+    direct_url = f"http://{DOMAIN}/uploads/{filename}"
+    pic_url = f"http://{DOMAIN}/media/proxy?url={direct_url}"
+
     user = request.user
     user.profile_pic = pic_url
     db.session.commit()
 
     return jsonify({"profile_pic": pic_url})
 
-@app.route('/api/settings/profile_pic', methods=['DELETE'])
-def delete_profile_pic():
+@app.route('/api/userprofile/picture', methods=['DELETE'])
+def delete_userprofile_picture():
     if not hasattr(request, 'user') or request.user is None:
         return "Unauthorized", 401
 
@@ -551,7 +650,9 @@ def serve_userserver_config():
                 "federation_receive": "/federation/receive",
                 "federation_validate": "/federation/validate",
                 "upload": "/api/upload",
-                "media_proxy": "/media/proxy"
+                "media_proxy": "/media/proxy",
+                "userprofile": "/api/userprofile/",
+                "userprofile_picture": "/api/userprofile/picture"
             }
         },
         "capabilities": {
@@ -561,7 +662,7 @@ def serve_userserver_config():
             "media_upload": True
         }
     }
-    
+
     return config, 200, {"Content-Type": "application/json; charset=utf-8"}
 
 if __name__ == "__main__":
