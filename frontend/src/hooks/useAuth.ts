@@ -39,7 +39,7 @@ export function useAuthCheck(requireAuth = true) {
       }
 
       try {
-        await api('/api/userprofile/');
+        await api('/api/users/me');
         return { needsSetup: false, isAuthenticated: true };
       } catch {
         return { needsSetup: false, isAuthenticated: false };

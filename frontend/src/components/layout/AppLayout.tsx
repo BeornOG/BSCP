@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import { useProfile } from "../../hooks/useProfile";
+import { useIsAdmin } from "../../hooks/useAdmin";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -12,8 +13,9 @@ const navItems = [
 
 export default function AppLayout({ children }: AppLayoutProps) {
   const { data: profile, isLoading } = useProfile();
+  const { data: isAdmin } = useIsAdmin();
 
-  const allNavItems = profile?.is_admin
+  const allNavItems = isAdmin
     ? [...navItems, { path: "/admin", icon: "admin_panel_settings", label: "Admin" }]
     : navItems;
 

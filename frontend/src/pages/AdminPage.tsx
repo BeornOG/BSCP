@@ -7,9 +7,9 @@ export default function AdminPage() {
   const generateInvite = useGenerateInvite();
   const deleteUser = useDeleteUser();
 
-  const handleDelete = (userId: string, username: string) => {
-    if (window.confirm(`Are you sure you want to delete user "${username}"?`)) {
-      deleteUser.mutate(userId);
+  const handleDelete = (fullId: string) => {
+    if (window.confirm(`Are you sure you want to deactivate user "${fullId}"?`)) {
+      deleteUser.mutate(fullId);
     }
   };
 
@@ -80,32 +80,30 @@ export default function AdminPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-[#71747a]">
-                  <th className="pb-3 font-medium">ID</th>
                   <th className="pb-3 font-medium">Username</th>
-                  <th className="pb-3 font-medium">Role</th>
+                  <th className="pb-3 font-medium">Display Name</th>
+                  <th className="pb-3 font-medium">Status</th>
                   <th className="pb-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {users?.map((user) => (
-                  <tr key={user.id} className="border-b border-[#232529] last:border-0">
-                    <td className="py-3 text-[#71747a]">{user.id}</td>
+                  <tr key={user.username} className="border-b border-[#232529] last:border-0">
                     <td className="py-3 text-[#e8eaed]">{user.username}</td>
+                    <td className="py-3 text-[#71747a]">{user.display_name}</td>
                     <td className="py-3">
-                      <Badge variant={user.is_admin ? 'accent' : 'default'}>
-                        {user.is_admin ? 'Admin' : 'User'}
+                      <Badge variant={user.status === 'online' ? 'success' : 'default'}>
+                        {user.status}
                       </Badge>
                     </td>
                     <td className="py-3 text-right">
-                      {!user.is_admin && (
-                        <button
-                          onClick={() => handleDelete(user.id, user.username)}
-                          className="text-red-400 hover:text-red-300 text-xs transition-colors"
-                          disabled={deleteUser.isPending}
-                        >
-                          Delete
-                        </button>
-                      )}
+                      <button
+                        onClick={() => handleDelete(user.username)}
+                        className="text-red-400 hover:text-red-300 text-xs transition-colors"
+                        disabled={deleteUser.isPending}
+                      >
+                        Deactivate
+                      </button>
                     </td>
                   </tr>
                 ))}

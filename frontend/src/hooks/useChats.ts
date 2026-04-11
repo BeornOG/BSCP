@@ -14,7 +14,7 @@ export function useStartChat() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (receiver: string) =>
-      apiPost('/api/messages/', { receiver, text: 'Hello!' }),
+      apiPost(`/api/chats/${encodeURIComponent(receiver)}/messages`, { text: 'Hello!' }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['chats'] });
     },
