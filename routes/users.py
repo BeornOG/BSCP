@@ -6,20 +6,12 @@ from werkzeug.utils import secure_filename
 import uuid, os
 
 from schemas import UserProfile, UserSettingsUpdate, ProfilePicResponse, BatchProfileRequest
-from routes import require_auth, require_admin, get_user_status
+from routes import require_auth, require_admin
+from services.users import get_profile, serialize_profile
+
 
 users_blp = SmorestBlueprint("users", __name__, url_prefix="/api/users",
                               description="User profiles and account management")
-
-
-def _serialize_profile(user, domain):
-    """Convert a User model to a public profile dict — no internal IDs exposed."""
-    return {
-        "username": f"{user.username}@{domain}",
-        "display_name": user.display_name or user.username,
-        "profile_pic": user.profile_pic or None,
-        "status": get_user_status(user),
-    }
 
 
 # ── /me ───────────────────────────────────────────────────────────────────
@@ -31,7 +23,7 @@ class CurrentUserResource(MethodView):
         """Get the authenticated user's profile"""
         require_auth()
         from app import DOMAIN
-        return _serialize_profile(request.user, DOMAIN)
+        return serialize_profile(request.user, DOMAIN)
 
     @users_blp.arguments(UserSettingsUpdate)
     @users_blp.response(200, UserProfile)
@@ -46,7 +38,7 @@ class CurrentUserResource(MethodView):
             user.display_name = data["display_name"]
 
         db.session.commit()
-        return _serialize_profile(user, DOMAIN)
+        return serialize_profile(user, DOMAIN)
 
 
 # ── /me/picture ───────────────────────────────────────────────────────────
@@ -101,31 +93,14 @@ class UserProfileResource(MethodView):
         if "@" not in full_id:
             abort(400, message="Invalid format. Use username@domain")
 
-        username, domain = full_id.rsplit("@", 1)
-        from app import User, DOMAIN
-
-        if domain == DOMAIN:
-            db = current_app.extensions['sqlalchemy']
-            user = db.session.query(User).filter_by(
-                username=username, is_deleted=False
-            ).first()
-            if not user:
-                abort(404, message="User not found")
-            return _serialize_profile(user, DOMAIN)
-
-        # Remote user — fetch via federation
-        import requests as http_requests
-        from json_discovery import get_endpoint
         try:
-            base = get_endpoint(domain, "userserver", "users")
-            if not base:
-                base = f"http://{domain}/api/users"
-            resp = http_requests.get(f"{base}/{full_id}", timeout=3)
-            if resp.status_code == 200:
-                return resp.json()
-            abort(404, message="User not found on remote server")
-        except http_requests.RequestException:
+            profile = get_profile(full_id)
+        except ConnectionError:
             abort(502, message="Failed to reach remote server")
+
+        if not profile:
+            abort(404, message="User not found")
+        return profile
 
     @users_blp.response(200)
     def delete(self, full_id):
@@ -161,32 +136,16 @@ class BatchProfilesResource(MethodView):
     def post(self, data):
         """Fetch profiles for multiple users at once"""
         require_auth()
-        import requests as http_requests
-        from app import User, DOMAIN
-        from json_discovery import get_endpoint
-        db = current_app.extensions['sqlalchemy']
         senders = data.get("senders", [])
         profiles = {}
 
         for sender in senders:
             if "@" not in sender:
                 continue
-            username, domain = sender.rsplit("@", 1)
-            if domain == DOMAIN:
-                user = db.session.query(User).filter_by(username=username).first()
-                profiles[sender] = _serialize_profile(user, DOMAIN) if user else None
-            else:
-                try:
-                    base = get_endpoint(domain, "userserver", "users")
-                    if not base:
-                        base = f"http://{domain}/api/users"
-                    resp = http_requests.get(f"{base}/{sender}", timeout=1)
-                    if resp.status_code == 200:
-                        profiles[sender] = resp.json()
-                    else:
-                        profiles[sender] = None
-                except Exception:
-                    profiles[sender] = None
+            try:
+                profiles[sender] = get_profile(sender)
+            except ConnectionError:
+                profiles[sender] = None
 
         return profiles
 
@@ -202,4 +161,4 @@ class UserListResource(MethodView):
         from app import User, DOMAIN
         db = current_app.extensions['sqlalchemy']
         users = db.session.query(User).all()
-        return [_serialize_profile(u, DOMAIN) for u in users]
+        return [serialize_profile(u, DOMAIN) for u in users]

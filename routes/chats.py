@@ -6,7 +6,8 @@ from datetime import datetime
 import uuid
 
 from schemas import ChatObject, MessageObject, MessagesQueryArgs, SendMessageBody
-from routes import require_auth, get_user_status
+from routes import require_auth
+from services.users import get_profile
 
 
 chats_blp = SmorestBlueprint("chats", __name__, url_prefix="/api/chats",
@@ -21,7 +22,7 @@ class ChatListResource(MethodView):
     def get(self):
         """List all conversations for the authenticated user"""
         require_auth()
-        from app import Message, User, DOMAIN
+        from app import Message, DOMAIN
         db = current_app.extensions['sqlalchemy']
         me = f"{request.user.username}@{DOMAIN}"
 
@@ -34,18 +35,19 @@ class ChatListResource(MethodView):
         chats = []
 
         for partner in sorted(partners):
-            display_name = partner.split("@")[0]
-            profile_pic = None
-            status = "offline"
-            if "@" in partner:
-                uname, domain = partner.split("@", 1)
-                if domain == DOMAIN:
-                    u = db.session.query(User).filter_by(username=uname).first()
-                    if u:
-                        if u.display_name:
-                            display_name = u.display_name
-                        profile_pic = u.profile_pic
-                        status = get_user_status(u)
+            try:
+                profile = get_profile(partner)
+            except ConnectionError:
+                profile = None
+
+            if profile:
+                display_name = profile["display_name"]
+                profile_pic = profile["profile_pic"]
+                status = profile["status"]
+            else:
+                display_name = partner.split("@")[0]
+                profile_pic = None
+                status = "offline"
 
             chats.append({"id": partner, "display_name": display_name, "profile_pic": profile_pic, "status": status})
 
@@ -101,7 +103,7 @@ class ChatMessagesResource(MethodView):
     def post(self, data, target):
         """Send a message to a conversation"""
         require_auth()
-        from app import Message as MsgModel, User, DOMAIN
+        from app import Message as MsgModel, DOMAIN
         from json_discovery import get_endpoint
         import requests as http_requests
 
@@ -112,21 +114,12 @@ class ChatMessagesResource(MethodView):
 
         # Verify the recipient exists before saving
         if "#" not in target:
-            username, domain = receiver.rsplit("@", 1)
-            if domain == DOMAIN:
-                user = db.session.query(User).filter_by(username=username, is_deleted=False).first()
-                if not user:
-                    abort(404, message="User not found")
-            else:
-                try:
-                    base = get_endpoint(domain, "userserver", "users")
-                    if not base:
-                        base = f"http://{domain}/api/users"
-                    resp = http_requests.get(f"{base}/{receiver}", timeout=3)
-                    if resp.status_code != 200:
-                        abort(404, message="User not found on remote server")
-                except http_requests.RequestException:
-                    abort(502, message="Failed to reach remote server")
+            try:
+                profile = get_profile(receiver)
+            except ConnectionError:
+                abort(502, message="Failed to reach remote server")
+            if not profile:
+                abort(404, message="User not found")
 
         msg_uuid = str(uuid.uuid4())
         full_id = f"{DOMAIN}/{msg_uuid}"
