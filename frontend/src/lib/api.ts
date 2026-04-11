@@ -26,7 +26,7 @@ export async function api<T = unknown>(url: string, opts?: RequestInit): Promise
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.error || body.errors?.join(', ') || res.statusText);
+    throw new ApiError(res.status, body.message || body.error || body.errors?.join(', ') || res.statusText);
   }
 
   return res.json();

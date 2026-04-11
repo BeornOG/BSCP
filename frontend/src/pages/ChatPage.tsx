@@ -24,8 +24,8 @@ export default function ChatPage() {
   };
 
   const handleNewChat = (receiver: string) => {
+    setActiveChatId(receiver);
     setActiveChatName(receiver);
-    setActiveChatId(null);
   };
 
   const handleSend = (text: string) => {

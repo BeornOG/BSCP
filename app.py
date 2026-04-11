@@ -92,6 +92,7 @@ app.config['OPENAPI_URL_PREFIX'] = '/api/docs'
 app.config['OPENAPI_JSON_PATH'] = 'openapi.json'
 app.config['OPENAPI_SWAGGER_UI_PATH'] = '/'
 app.config['OPENAPI_SWAGGER_UI_URL'] = 'https://cdn.jsdelivr.net/npm/swagger-ui-dist/'
+app.config['ETAG_DISABLED'] = True
 
 db = SQLAlchemy(app)
 api = Api(app)

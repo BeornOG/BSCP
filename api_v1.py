@@ -50,7 +50,7 @@ class SetupResource(MethodView):
         username = data.get("username", "").strip()
         password = data.get("password", "")
         password_confirm = data.get("password_confirm", "")
-        email = data.get("email", "").strip() or None
+        email = (data.get("email") or "").strip() or None
 
         if not username:
             errors.append("Username is required")
@@ -347,7 +347,7 @@ class UserListResource(MethodView):
         from app import User, DOMAIN
         db = current_app.extensions['sqlalchemy']
         users = db.session.query(User).all()
-        return [_serialize_user(u, DOMAIN, full=False) for u in users]
+        return [_serialize_user(u, DOMAIN) for u in users]
 
 
 @users_blp.route("/<string:user_id>")
@@ -395,14 +395,17 @@ class ChatListResource(MethodView):
 
         for partner in sorted(partners):
             display_name = partner.split("@")[0]
+            profile_pic = None
             if "@" in partner:
                 uname, domain = partner.split("@", 1)
                 if domain == DOMAIN:
                     u = db.session.query(User).filter_by(username=uname).first()
-                    if u and u.display_name:
-                        display_name = u.display_name
+                    if u:
+                        if u.display_name:
+                            display_name = u.display_name
+                        profile_pic = u.profile_pic
 
-            chats.append({"id": partner, "display_name": display_name, "profile_pic": None})
+            chats.append({"id": partner, "display_name": display_name, "profile_pic": profile_pic})
 
         return chats
 

@@ -7,7 +7,7 @@ export default function AdminPage() {
   const generateInvite = useGenerateInvite();
   const deleteUser = useDeleteUser();
 
-  const handleDelete = (userId: number, username: string) => {
+  const handleDelete = (userId: string, username: string) => {
     if (window.confirm(`Are you sure you want to delete user "${username}"?`)) {
       deleteUser.mutate(userId);
     }
