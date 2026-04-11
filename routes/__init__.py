@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from flask import request
 from flask_smorest import abort
 
-ONLINE_THRESHOLD = timedelta(seconds=5)
+ONLINE_THRESHOLD = timedelta(minutes=5)
 AWAY_THRESHOLD = timedelta(hours=1)
 INACTIVE_SESSION_THRESHOLD = timedelta(hours=6)
 STATUS_MAP = {0: "online", 1: "offline", 2: "away", 3: "dnd"}
