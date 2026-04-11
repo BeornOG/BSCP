@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, type FC, type MouseEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, type FC, type MouseEvent } from 'react';
 import MessageBubble from './MessageBubble';
 import { Spinner } from '../ui';
 import type { Message } from '../../types';
@@ -20,7 +20,8 @@ const MessageList: FC<MessageListProps> = ({
   const bottomRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
   const prevMessageCount = useRef(0);
-  const profilePicCache = useRef<Record<string, string>>({});
+  const [profilePics, setProfilePics] = useState<Record<string, string>>({});
+  const fetchedSenders = useRef<Set<string>>(new Set());
 
   // Fetch profile pics for new senders
   useEffect(() => {
@@ -28,22 +29,20 @@ const MessageList: FC<MessageListProps> = ({
       .map((m) => m.sender)
       .filter(
         (sender, i, arr) =>
-          arr.indexOf(sender) === i && !(sender in profilePicCache.current)
+          arr.indexOf(sender) === i && !fetchedSenders.current.has(sender)
       );
 
     if (newSenders.length === 0) return;
 
     // Mark as pending to avoid duplicate fetches
-    newSenders.forEach((s) => {
-      profilePicCache.current[s] = '';
-    });
+    newSenders.forEach((s) => fetchedSenders.current.add(s));
 
     newSenders.forEach((sender) => {
       fetch(`/api/users/${encodeURIComponent(sender)}`)
         .then((res) => res.ok ? res.json() : null)
         .then((data) => {
           if (data?.profile_pic) {
-            profilePicCache.current[sender] = data.profile_pic;
+            setProfilePics((prev) => ({ ...prev, [sender]: data.profile_pic }));
           }
         })
         .catch(() => {});
@@ -109,7 +108,7 @@ const MessageList: FC<MessageListProps> = ({
             isOwn={msg.sender === currentUser}
             isPending={isPending}
             isFailed={isFailed}
-            profilePic={profilePicCache.current[msg.sender] || undefined}
+            profilePic={profilePics[msg.sender] || undefined}
           />
         );
       })}
