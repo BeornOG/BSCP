@@ -194,10 +194,21 @@ class LogoutResource(MethodView):
         db = current_app.extensions['sqlalchemy']
         token = session.get("session_token")
         if token:
+            from app import User
             us = db.session.query(UserSession).filter_by(token=token).first()
             if us:
+                user_id = us.user_id
                 db.session.delete(us)
                 db.session.commit()
+                remaining = db.session.query(UserSession).filter(
+                    UserSession.user_id == user_id,
+                    UserSession.expires_at > datetime.utcnow()
+                ).count()
+                if remaining == 0:
+                    user = db.session.query(User).get(user_id)
+                    if user:
+                        user.Status_type = 1
+                        db.session.commit()
         session.clear()
         return {"success": True}
 
@@ -208,6 +219,8 @@ def _create_session(db, user):
     """Create a new device session and store the token in the flask session."""
     from app import UserSession
     device_token = secrets.token_urlsafe(32)
+    if user.Status_type not in (2, 3):
+        user.Status_type = 0
     new_session = UserSession(
         id=str(uuid.uuid4()),
         user_id=user.id,

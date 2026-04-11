@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import { useProfile } from "../../hooks/useProfile";
 import { useIsAdmin } from "../../hooks/useAdmin";
+import { useUserActivityPing } from "../../hooks/useActivity";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -12,6 +13,7 @@ const navItems = [
 ];
 
 export default function AppLayout({ children }: AppLayoutProps) {
+  useUserActivityPing();
   const { data: profile, isLoading } = useProfile();
   const { data: isAdmin } = useIsAdmin();
 

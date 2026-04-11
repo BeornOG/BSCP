@@ -1,7 +1,8 @@
 """User profile routes — /api/users"""
+from datetime import datetime
 from flask.views import MethodView
 from flask_smorest import Blueprint as SmorestBlueprint, abort
-from flask import request, current_app
+from flask import request, current_app, session
 from werkzeug.utils import secure_filename
 import uuid, os
 
@@ -42,6 +43,29 @@ class CurrentUserResource(MethodView):
 
 
 # ── /me/picture ───────────────────────────────────────────────────────────
+
+@users_blp.route("/me/activity")
+class UserActivityResource(MethodView):
+    @users_blp.response(200)
+    def post(self):
+        """Record a browser/activity ping for the authenticated user."""
+        require_auth()
+        from app import UserSession
+
+        db = current_app.extensions['sqlalchemy']
+        token = session.get('session_token')
+        if token:
+            user_session = db.session.query(UserSession).filter_by(token=token).first()
+            if user_session and user_session.expires_at > datetime.utcnow():
+                try:
+                    user_session.last_active = datetime.utcnow()
+                    if request.user.Status_type not in (2, 3):
+                        request.user.Status_type = 0
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+        return {"success": True}
+
 
 @users_blp.route("/me/picture")
 class ProfilePictureResource(MethodView):

@@ -31,11 +31,6 @@ def load_logged_in_user():
         return
 
     if user_session and user_session.expires_at > datetime.utcnow():
-        try:
-            user_session.last_active = datetime.utcnow()
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
         request.user = user_session.user
     else:
         # Expired or not found — just treat as unauthenticated.
