@@ -34,6 +34,7 @@ class ChatObject(Schema):
     display_name = fields.String(dump_only=True, metadata={"description": "Display name of chat partner"})
     profile_pic = fields.String(dump_default=None, metadata={"description": "Profile picture URL"})
     status = fields.String(dump_only=True, metadata={"description": "User status: online, offline, away, or dnd"})
+    unread_count = fields.Integer(dump_only=True, metadata={"description": "Number of unread messages"})
 
 
 class InviteObject(Schema):
@@ -57,6 +58,20 @@ class UserProfile(Schema):
     profile_pic = fields.String(allow_none=True, metadata={"description": "Profile picture URL"})
     status = fields.String(metadata={"description": "User status: online, offline, away, or dnd"})
     is_admin = fields.Boolean(dump_only=True, metadata={"description": "Whether user is an admin on the local server"})
+
+
+class PushSubscriptionKeys(Schema):
+    p256dh = fields.String(required=True, metadata={"description": "Base64 URL-safe P256DH key"})
+    auth = fields.String(required=True, metadata={"description": "Base64 URL-safe auth secret"})
+
+
+class PushSubscriptionRequest(Schema):
+    endpoint = fields.String(required=True, metadata={"description": "Push endpoint URL"})
+    keys = fields.Nested(PushSubscriptionKeys, required=True)
+
+
+class VapidPublicKeyResponse(Schema):
+    publicKey = fields.String(metadata={"description": "VAPID public key (base64url)"})
 
 
 class UserSettingsUpdate(Schema):

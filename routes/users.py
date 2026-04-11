@@ -6,7 +6,13 @@ from flask import request, current_app, session
 from werkzeug.utils import secure_filename
 import uuid, os
 
-from schemas import UserProfile, UserSettingsUpdate, ProfilePicResponse
+from schemas import (
+    UserProfile,
+    UserSettingsUpdate,
+    ProfilePicResponse,
+    PushSubscriptionRequest,
+    VapidPublicKeyResponse,
+)
 from routes import require_auth, require_admin
 from services.users import get_profile, serialize_profile
 
@@ -43,6 +49,62 @@ class CurrentUserResource(MethodView):
 
 
 # ── /me/picture ───────────────────────────────────────────────────────────
+
+@users_blp.route("/push/vapid_public_key")
+class VapidPublicKeyResource(MethodView):
+    @users_blp.response(200, VapidPublicKeyResponse)
+    def get(self):
+        """Get VAPID public key for browser push subscription."""
+        return {"publicKey": current_app.config.get("VAPID_PUBLIC_KEY", "")}
+
+
+@users_blp.route("/me/push/subscribe")
+class PushSubscriptionResource(MethodView):
+    @users_blp.arguments(PushSubscriptionRequest)
+    @users_blp.response(200)
+    def post(self, data):
+        """Save or update a browser push subscription for the authenticated user."""
+        require_auth()
+        from app import PushSubscription
+
+        db = current_app.extensions['sqlalchemy']
+        endpoint = data.get('endpoint')
+        keys = data.get('keys') or {}
+        if not endpoint or not keys.get('p256dh') or not keys.get('auth'):
+            abort(400, message='Invalid push subscription payload')
+
+        subs = db.session.query(PushSubscription).filter_by(endpoint=endpoint).all()
+        if subs:
+            sub = subs[0]
+            sub.user_id = request.user.id
+            sub.p256dh = keys['p256dh']
+            sub.auth = keys['auth']
+        else:
+            sub = PushSubscription(
+                user_id=request.user.id,
+                endpoint=endpoint,
+                p256dh=keys['p256dh'],
+                auth=keys['auth'],
+            )
+            db.session.add(sub)
+        db.session.commit()
+        return {"success": True}
+
+    @users_blp.response(200)
+    def delete(self):
+        """Remove a browser push subscription for the authenticated user."""
+        require_auth()
+        from app import PushSubscription
+
+        db = current_app.extensions['sqlalchemy']
+        endpoint = request.args.get('endpoint')
+        query = db.session.query(PushSubscription).filter_by(user_id=request.user.id)
+        if endpoint:
+            query = query.filter_by(endpoint=endpoint)
+        deleted = query.delete()
+        db.session.commit()
+        return {"deleted": deleted}
+
 
 @users_blp.route("/me/activity")
 class UserActivityResource(MethodView):

@@ -1,5 +1,5 @@
 import { useState, type FC, type KeyboardEvent } from 'react';
-import { Button, Input, Avatar } from '../ui';
+import { Button, Input, Avatar, Badge } from '../ui';
 import type { Chat } from '../../types';
 
 interface ChatSidebarProps {
@@ -90,10 +90,15 @@ const ChatSidebar: FC<ChatSidebarProps> = ({
             }`}
           >
             <Avatar size="sm" src={chat.profile_pic} name={chat.display_name} status={chat.status} />
-            <div className="min-w-0">
-              <span className="block truncate text-sm font-medium text-[#e8eaed]">
-                {chat.display_name}
-              </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="block truncate text-sm font-medium text-[#e8eaed]">
+                  {chat.display_name}
+                </span>
+                {chat.unread_count > 0 && (
+                  <Badge variant="success">{chat.unread_count}</Badge>
+                )}
+              </div>
               <span className="block truncate text-xs text-[#71747a]">
                 {chat.id}
               </span>

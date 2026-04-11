@@ -12,6 +12,7 @@ export interface Chat {
   display_name: string;
   profile_pic: string | null;
   status: 'online' | 'offline' | 'away' | 'dnd';
+  unread_count: number;
 }
 
 export interface UserProfile {

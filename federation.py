@@ -36,6 +36,18 @@ def receive_message():
                 print(f"[FEDERATION] Saving message: sender={received.sender}, receiver={received.receiver}")
                 db.session.add(received)
                 db.session.commit()
+                try:
+                    from app import User, send_push_notification
+                    recipient = db.session.query(User).filter_by(username=received.receiver.split('@', 1)[0]).first()
+                    if recipient:
+                        send_push_notification(
+                            recipient,
+                            f"New message from {received.sender}",
+                            received.text,
+                            url='/',
+                        )
+                except Exception as exc:
+                    print(f"[PUSH] Unable to send push after federation receive: {exc}")
                 print(f"[FEDERATION] Message saved successfully")
                 return "OK", 200
             else:

@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef, useCallback, type FC, type MouseEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, type FC, type MouseEvent } from 'react';
 import MessageBubble from './MessageBubble';
 import { Spinner } from '../ui';
 import type { Message } from '../../types';
 
 interface MessageListProps {
+  chatId: string | null;
   messages: Message[];
   currentUser: string;
   isLoading: boolean;
@@ -11,6 +12,7 @@ interface MessageListProps {
 }
 
 const MessageList: FC<MessageListProps> = ({
+  chatId,
   messages,
   currentUser,
   isLoading,
@@ -18,10 +20,20 @@ const MessageList: FC<MessageListProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const unreadMarkerRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
   const prevMessageCount = useRef(0);
   const [profilePics, setProfilePics] = useState<Record<string, string>>({});
   const fetchedSenders = useRef<Set<string>>(new Set());
+  const [hasDoneInitialScroll, setHasDoneInitialScroll] = useState(false);
+  const [hideUnreadBoundary, setHideUnreadBoundary] = useState(false);
+
+  const firstUnreadIndex = useMemo(
+    () => messages.findIndex((m) => !m.is_read && m.sender !== currentUser),
+    [messages, currentUser]
+  );
+  const hasInitialUnread = firstUnreadIndex !== -1;
+  const showUnreadBoundary = hasInitialUnread && !hideUnreadBoundary;
 
   // Fetch profile pics for new senders
   useEffect(() => {
@@ -49,21 +61,48 @@ const MessageList: FC<MessageListProps> = ({
     });
   }, [messages]);
 
-  // Track scroll position to decide auto-scroll
+  // Reset auto-scroll state when switching conversations
+  useEffect(() => {
+    shouldAutoScroll.current = true;
+    prevMessageCount.current = 0;
+    setHasDoneInitialScroll(false);
+    setHideUnreadBoundary(false);
+  }, [chatId]);
+
+  // Track scroll position to decide auto-scroll and hide unread boundary if user reaches bottom
   const handleScroll = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    shouldAutoScroll.current = distanceFromBottom <= 60;
-  }, []);
+    const atBottom = distanceFromBottom <= 60;
+    shouldAutoScroll.current = atBottom;
+    if (atBottom && showUnreadBoundary) {
+      setHideUnreadBoundary(true);
+    }
+  }, [showUnreadBoundary]);
+
+  useEffect(() => {
+    if (!chatId || hasDoneInitialScroll || messages.length === 0) return;
+
+    if (firstUnreadIndex !== -1) {
+      unreadMarkerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    setHasDoneInitialScroll(true);
+  }, [chatId, firstUnreadIndex, hasDoneInitialScroll, messages.length]);
 
   // Auto-scroll on new messages
   useEffect(() => {
     if (messages.length > prevMessageCount.current || shouldAutoScroll.current) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      if (showUnreadBoundary) {
+        setHideUnreadBoundary(true);
+      }
     }
     prevMessageCount.current = messages.length;
-  }, [messages]);
+  }, [messages, showUnreadBoundary]);
 
   // Click delegation for images
   const handleClick = (e: MouseEvent<HTMLDivElement>) => {
@@ -97,19 +136,33 @@ const MessageList: FC<MessageListProps> = ({
       onClick={handleClick}
       className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-4"
     >
-      {messages.map((msg) => {
+      {messages.map((msg, index) => {
         const isPending = msg.id.startsWith('pending-');
         const isFailed = msg.id.startsWith('failed-');
+        const isFirstUnread = index === firstUnreadIndex;
 
         return (
-          <MessageBubble
-            key={msg.id}
-            message={msg}
-            isOwn={msg.sender === currentUser}
-            isPending={isPending}
-            isFailed={isFailed}
-            profilePic={profilePics[msg.sender] || undefined}
-          />
+          <div key={msg.id}>
+            {isFirstUnread && showUnreadBoundary && (
+              <div
+                ref={unreadMarkerRef}
+                className="mb-4 flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-red-300"
+              >
+                <div className="h-px flex-1 bg-red-500" />
+                <span className="px-2 py-1 rounded-full bg-[#2a0d12] text-red-200">
+                  Unread messages
+                </span>
+                <div className="h-px flex-1 bg-red-500" />
+              </div>
+            )}
+            <MessageBubble
+              message={msg}
+              isOwn={msg.sender === currentUser}
+              isPending={isPending}
+              isFailed={isFailed}
+              profilePic={profilePics[msg.sender] || undefined}
+            />
+          </div>
         );
       })}
       <div ref={bottomRef} />

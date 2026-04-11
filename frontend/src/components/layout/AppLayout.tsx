@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import { useProfile } from "../../hooks/useProfile";
 import { useIsAdmin } from "../../hooks/useAdmin";
 import { useUserActivityPing } from "../../hooks/useActivity";
+import { usePushNotifications } from "../../hooks/useNotifications";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -13,6 +14,7 @@ const navItems = [
 ];
 
 export default function AppLayout({ children }: AppLayoutProps) {
+  usePushNotifications();
   useUserActivityPing();
   const { data: profile, isLoading } = useProfile();
   const { data: isAdmin } = useIsAdmin();

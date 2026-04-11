@@ -18,6 +18,7 @@ export default function ChatPage() {
   const { data: chats, isLoading: chatsLoading } = useChats();
   const { data: serverMessages, isLoading: messagesLoading } = useMessages(activeChatId);
   const sendMessage = useSendMessage();
+  const { data: profile } = useProfile();
 
   const messages = useMemo(() => {
     const server = serverMessages || [];
@@ -29,7 +30,6 @@ export default function ChatPage() {
     return [...server, ...local].sort((a, b) => a.timestamp - b.timestamp);
   }, [serverMessages, sendMessage.localMessages]);
   const uploadFile = useUploadFile();
-  const { data: profile } = useProfile();
 
   const handleSelectChat = (chat: { id: string; display_name: string; profile_pic: string | null; status: UserStatus }) => {
     sendMessage.clearFailed();
@@ -98,6 +98,7 @@ export default function ChatPage() {
             </div>
 
             <MessageList
+              chatId={activeChatId}
               messages={messages}
               currentUser={profile?.username || ''}
               isLoading={messagesLoading}

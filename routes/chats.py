@@ -49,7 +49,19 @@ class ChatListResource(MethodView):
                 profile_pic = None
                 status = "offline"
 
-            chats.append({"id": partner, "display_name": display_name, "profile_pic": profile_pic, "status": status})
+            unread_count = db.session.query(Message).filter(
+                Message.sender == partner,
+                Message.receiver == me,
+                Message.is_read == False
+            ).count()
+
+            chats.append({
+                "id": partner,
+                "display_name": display_name,
+                "profile_pic": profile_pic,
+                "status": status,
+                "unread_count": unread_count,
+            })
 
         return chats
 
@@ -96,6 +108,17 @@ class ChatMessagesResource(MethodView):
 
         msgs = query.order_by(Message.timestamp.desc()).limit(args["limit"]).all()
 
+        if target_full and target_full != me:
+            unread_msgs = db.session.query(Message).filter(
+                Message.sender == target_full,
+                Message.receiver == me,
+                Message.is_read == False
+            ).all()
+            if unread_msgs:
+                for m in unread_msgs:
+                    m.is_read = True
+                db.session.commit()
+
         return [_serialize_message(m) for m in reversed(msgs)]
 
     @chats_blp.arguments(SendMessageBody)
@@ -134,6 +157,17 @@ class ChatMessagesResource(MethodView):
         )
         db.session.add(new_msg)
         db.session.commit()
+
+        if receiver.endswith(f"@{DOMAIN}"):
+            from app import User, send_push_notification
+            recipient = db.session.query(User).filter_by(username=receiver.split("@", 1)[0]).first()
+            if recipient and recipient.id != request.user.id:
+                send_push_notification(
+                    recipient,
+                    f"New message from {request.user.username}",
+                    data["text"],
+                    url='/',
+                )
 
         # Federate
         msg_payload = {

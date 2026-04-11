@@ -83,6 +83,31 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Limiet op 16MB
 app.config['DOMAIN'] = DOMAIN
+app.config['VAPID_PUBLIC_KEY'] = os.getenv('VAPID_PUBLIC_KEY', '').strip()
+app.config['VAPID_PRIVATE_KEY'] = os.getenv('VAPID_PRIVATE_KEY', '').strip()
+app.config['VAPID_CONTACT'] = os.getenv('VAPID_CONTACT', 'mailto:admin@localhost')
+
+if not app.config['VAPID_PRIVATE_KEY'] or not app.config['VAPID_PUBLIC_KEY']:
+    try:
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.primitives import serialization
+        from base64 import urlsafe_b64encode
+
+        private_key = ec.generate_private_key(ec.SECP256R1())
+        private_bytes = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        public_bytes = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.X962,
+            format=serialization.PublicFormat.UncompressedPoint,
+        )
+        app.config['VAPID_PRIVATE_KEY'] = private_bytes.decode('utf-8')
+        app.config['VAPID_PUBLIC_KEY'] = urlsafe_b64encode(public_bytes).decode('ascii').rstrip('=')
+        print('[VAPID] Generated ephemeral VAPID keys for development.')
+    except Exception as exc:
+        print(f"[VAPID] Failed to generate ephemeral VAPID keys: {exc}")
 
 # OpenAPI / flask-smorest configuration
 app.config['API_TITLE'] = 'BSCP API'
@@ -213,6 +238,7 @@ class User(db.Model):
 
     # Relatie naar actieve apparaten/sessies
     sessions = db.relationship('UserSession', backref='user', lazy=True, cascade="all, delete-orphan")
+    push_subscriptions = db.relationship('PushSubscription', backref='user', lazy=True, cascade="all, delete-orphan")
 
 class UserSession(db.Model):
     id = db.Column(db.String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -221,6 +247,15 @@ class UserSession(db.Model):
     device_info = db.Column(db.String(255)) # Bijv. "Chrome on Windows"
     last_active = db.Column(db.DateTime, default=datetime.now)
     expires_at = db.Column(db.DateTime, nullable=False)
+
+class PushSubscription(db.Model):
+    id = db.Column(db.String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = db.Column(db.String(255), db.ForeignKey('user.id'), nullable=False)
+    endpoint = db.Column(db.Text, nullable=False, unique=True)
+    p256dh = db.Column(db.String(255), nullable=False)
+    auth = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
 
 class Upload(db.Model):
     id = db.Column(db.String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -237,6 +272,67 @@ class InviteCode(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now)
     used_at = db.Column(db.DateTime)
     expires_at = db.Column(db.DateTime)
+
+
+def send_push_notification(user, title, body, url='/'):
+    if not user:
+        return
+
+    vapid_private_key = app.config.get('VAPID_PRIVATE_KEY')
+    vapid_public_key = app.config.get('VAPID_PUBLIC_KEY')
+    vapid_contact = app.config.get('VAPID_CONTACT')
+    if not vapid_private_key or not vapid_public_key:
+        print('[PUSH] VAPID keys are not configured, push cannot be sent.')
+        return
+
+    try:
+        from pywebpush import webpush, WebPushException
+    except ImportError:
+        print('[PUSH] pywebpush is not installed; install pywebpush to enable server push notifications.')
+        return
+
+    subscriptions = getattr(user, 'push_subscriptions', []) or []
+    if not subscriptions:
+        return
+
+    payload = json.dumps({
+        'title': title,
+        'body': body,
+        'url': url,
+    })
+
+    for subscription in subscriptions:
+        info = {
+            'endpoint': subscription.endpoint,
+            'keys': {
+                'p256dh': subscription.p256dh,
+                'auth': subscription.auth,
+            },
+        }
+        try:
+            webpush(
+                subscription_info=info,
+                data=payload,
+                vapid_private_key=vapid_private_key,
+                vapid_claims={'sub': vapid_contact},
+            )
+        except WebPushException as exc:
+            print(f'[PUSH] Failed sending push to {user.username}: {exc}')
+            response = getattr(exc, 'response', None)
+            if response is not None and response.status_code in (404, 410):
+                db.session.delete(subscription)
+                db.session.commit()
+        except Exception as exc:
+            print(f'[PUSH] Unexpected push error for {user.username}: {exc}')
+
+
+def get_local_user(full_id):
+    if '@' not in full_id:
+        return None
+    username, domain = full_id.rsplit('@', 1)
+    if domain != DOMAIN:
+        return None
+    return db.session.query(User).filter_by(username=username).first()
 
 
 with app.app_context():
