@@ -473,6 +473,9 @@ def get_userprofile():
         user = request.user
         return jsonify({
             "display_name": user.display_name or user.username,
+            "username": user.username,
+            "domain": DOMAIN,
+            "full_id": f"{user.username}@{DOMAIN}",
             "theme": user.theme or "dark",
             "accent_color": user.accent_color or "#7eafff",
             "profile_pic": user.profile_pic or ""
@@ -666,4 +669,4 @@ def serve_userserver_config():
     return config, 200, {"Content-Type": "application/json; charset=utf-8"}
 
 if __name__ == "__main__":
-    app.run(port=PORT)
+    app.run(port=PORT, debug=True, use_reloader=True)
