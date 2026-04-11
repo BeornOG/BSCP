@@ -73,7 +73,9 @@ print(f"Cache_time:   {CACHE_TIME}")
 print(f"Upload_Dir:   {UPLOAD_FOLDER}")
 print(f"----------------------")
 
-app = Flask(__name__)
+STATIC_DIR = os.path.join(basedir, "static")
+
+app = Flask(__name__, static_folder=STATIC_DIR, static_url_path='/static')
 app.secret_key = SECRET_KEY
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DB_NAME}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -667,6 +669,20 @@ def serve_userserver_config():
     }
 
     return config, 200, {"Content-Type": "application/json; charset=utf-8"}
+
+# --- SERVE VITE SPA FROM /static ---
+
+@app.route('/')
+@app.route('/<path:path>')
+def serve_spa(path=''):
+    """Serve the Vite SPA. Static assets are served by Flask's static handler,
+    all other routes fall through to index.html for client-side routing."""
+    # If the path matches an actual file in the static dir, serve it
+    file_path = os.path.join(STATIC_DIR, path)
+    if path and os.path.isfile(file_path):
+        return send_from_directory(STATIC_DIR, path)
+    # Otherwise serve index.html for SPA client-side routing
+    return send_from_directory(STATIC_DIR, 'index.html')
 
 if __name__ == "__main__":
     app.run(port=PORT, debug=True, use_reloader=True)
