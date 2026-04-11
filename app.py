@@ -1,6 +1,7 @@
 import sys, uuid, requests, os, io, hashlib, json
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
+from flask_smorest import Api
 from datetime import datetime
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
@@ -82,11 +83,27 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Limiet op 16MB
 app.config['DOMAIN'] = DOMAIN
-db = SQLAlchemy(app)
 
-# Register blueprints
+# OpenAPI / flask-smorest configuration
+app.config['API_TITLE'] = 'BSCP API'
+app.config['API_VERSION'] = 'v1'
+app.config['OPENAPI_VERSION'] = '3.0.3'
+app.config['OPENAPI_URL_PREFIX'] = '/api/docs'
+app.config['OPENAPI_JSON_PATH'] = 'openapi.json'
+app.config['OPENAPI_SWAGGER_UI_PATH'] = '/'
+app.config['OPENAPI_SWAGGER_UI_URL'] = 'https://cdn.jsdelivr.net/npm/swagger-ui-dist/'
+
+db = SQLAlchemy(app)
+api = Api(app)
+
+# Register standard Flask blueprints
 app.register_blueprint(web_bp)
 app.register_blueprint(federation_bp)
+
+# Register flask-smorest API blueprints
+from api_v1 import ALL_BLUEPRINTS
+for blp in ALL_BLUEPRINTS:
+    api.register_blueprint(blp)
 
 # --- CACHE CLEANUP BACKGROUND THREAD ---
 def load_cache_metadata():
@@ -217,187 +234,7 @@ class InviteCode(db.Model):
 with app.app_context():
     db.create_all()
 
-# --- API ---
-
-@app.route("/api/chats")
-def get_chats():
-    if not hasattr(request, 'user') or request.user is None:
-        return "Unauthorized", 401
-    me = request.user.username
-    my_full_identity = f"{me}@{DOMAIN}"
-
-    # Find all users I've communicated with
-    from sqlalchemy import or_
-
-    # Messages where I'm the sender (exact match on my full identity)
-    sent_to = db.session.query(Message.receiver).filter(
-        Message.sender == my_full_identity
-    ).distinct()
-
-    # Messages where I'm the receiver (exact match on my full identity)
-    received_from = db.session.query(Message.sender).filter(
-        Message.receiver == my_full_identity
-    ).distinct()
-
-    partners = set()
-
-    # Add senders of messages I received (always have domain now)
-    for sender in received_from:
-        sender_name = sender[0]
-        partners.add(sender_name)
-
-    # Add receivers of messages I sent (always have domain now)
-    for receiver in sent_to:
-        receiver_name = receiver[0]
-        partners.add(receiver_name)
-
-    # Return structured chat entries with display names instead of raw IDs
-    chat_list = []
-
-    for partner in sorted(partners):
-        display_name = partner.split('@')[0]
-        if '@' in partner:
-            username, domain = partner.split('@', 1)
-            # For local users: get display name from database
-            if domain == DOMAIN:
-                user_obj = User.query.filter_by(username=username).first()
-                if user_obj and user_obj.display_name:
-                    display_name = user_obj.display_name
-
-        chat_list.append({
-            'id': partner,
-            'display_name': display_name,
-            'profile_pic': None  # Load separately in frontend for speed
-        })
-
-    return jsonify(chat_list)
-
-@app.route("/api/messages/<path:target>")
-def get_messages(target):
-    if not hasattr(request, 'user') or request.user is None:
-        return "Unauthorized", 401
-    me = request.user.username
-
-    since = request.args.get("since", type=float)    # Get messages AFTER this time
-    before = request.args.get("before", type=float)  # Get messages BEFORE this time (for history)
-    limit = request.args.get("limit", type=int, default=50)
-
-    # BRANCH: Channel Server (External)
-    if "#" in target:
-        target_domain = target.split('#')[0]
-        channel_url = get_endpoint(target_domain, "channelserver", "channel_poll")
-        if not channel_url:
-            channel_url = f"http://{target_domain}/api/channel/poll"  # Fallback
-        params = {"path": target, "limit": limit, "since": since, "before": before}
-        try:
-            return jsonify(requests.get(channel_url, params=params).json())
-        except:
-            return jsonify([]), 500
-
-    # Query for direct messages - both sender and receiver always include domain
-    from sqlalchemy import or_
-
-    # Build target with domain if not already present
-    target_with_domain = f"{target}@{DOMAIN}" if '@' not in target else target
-
-    # print(f"\n[MESSAGES DEBUG] Querying for user '{me}' talking to '{target}'")
-    # print(f"[MESSAGES DEBUG] Target normalized to: '{target_with_domain}'")
-    # print(f"[MESSAGES DEBUG] Looking for:")
-    # print(f"[MESSAGES DEBUG]   - Sent: sender starts with '{me}@' AND receiver == '{target_with_domain}'")
-    # print(f"[MESSAGES DEBUG]   - Received: sender == '{target_with_domain}' AND receiver starts with '{me}@'")
-
-    # First, check what's actually in the database
-    # all_messages = db.session.query(Message).all()
-    # print(f"[MESSAGES DEBUG] Total messages in database: {len(all_messages)}")
-    # for m in all_messages:
-    #     print(f"[MESSAGES DEBUG]   - ID: {m.id}, Sender: {m.sender}, Receiver: {m.receiver}")
-
-    # Build all possible variations of the target name for matching
-    # ONLY match on domain-qualified names to prevent cross-instance message leaks
-    target_variations = [target_with_domain]  # e.g., ["bob@localhost:5000"]
-
-    # Build my full user@domain identifier for exact matching
-    my_full_identity = f"{me}@{DOMAIN}"
-
-    # Messages where I sent to target
-    sent_condition = (Message.sender == my_full_identity) & (Message.receiver == target_with_domain)
-
-    # Messages where target sent to me
-    received_condition = (Message.sender == target_with_domain) & (Message.receiver == my_full_identity)
-
-    query = Message.query.filter(or_(sent_condition, received_condition))
-
-    if since:
-        query = query.filter(Message.timestamp > datetime.fromtimestamp(since))
-    if before:
-        query = query.filter(Message.timestamp < datetime.fromtimestamp(before))
-
-    msgs = query.order_by(Message.timestamp.desc()).limit(limit).all()
-
-    return jsonify([{
-        "id": m.id,
-        "sender": m.sender,
-        "sender_profile_pic": None,  # Load separately on frontend for speed
-        "text": m.text,
-        "time": m.timestamp.timestamp() # Sends as Unix Epoch (float)
-    } for m in reversed(msgs)])
-
-@app.route("/api/sendmessage", methods=["POST"])
-def send_message():
-    if not hasattr(request, 'user') or request.user is None:
-        return "Unauthorized", 401
-    data = request.json
-    msg_uuid = str(uuid.uuid4())
-    full_id = f"{DOMAIN}/{msg_uuid}" # Unieke ID over federatie heen
-    val_key = "key-" + msg_uuid[:8]
-
-    # Normalize receiver to always include domain
-    receiver = data['receiver']
-    if '@' not in receiver:
-        # Local message - add our domain
-        receiver_normalized = f"{receiver}@{DOMAIN}"
-    else:
-        # Remote message - already has domain
-        receiver_normalized = receiver
-
-    new_msg = Message(id=full_id, sender=f"{request.user.username}@{DOMAIN}", receiver=receiver_normalized,
-                      text=data['messageText'], validation_key=val_key)
-    db.session.add(new_msg)
-    db.session.commit()
-
-    # --- CHANNEL LOGIC ---
-    if "#" in receiver:
-        target_domain = receiver.split('#')[0]
-        channel_url = get_endpoint(target_domain, "channelserver", "channel_send")
-        if not channel_url:
-            channel_url = f"http://{target_domain}/api/channel/send"  # Fallback
-        payload = {"id": full_id, "sender": f"{request.user.username}@{DOMAIN}", "receiver": receiver,
-                   "text": data['messageText'], "validationKey": val_key}
-        try:
-            requests.post(channel_url, json=payload, timeout=3)
-            return jsonify({"status": "Sent to Channel"})
-        except:
-            return jsonify({"error": "Channel Server Offline"}), 500
-    else:
-        # Direct message
-        if '@' not in receiver:
-            # Local message - just username
-            target_domain = DOMAIN
-        else:
-            target_domain = receiver.split('@')[-1]
-        payload = {"id": full_id, "sender": f"{request.user.username}@{DOMAIN}", "receiver": receiver_normalized,
-                   "text": data['messageText'], "validationKey": val_key}
-        Send_URL = get_endpoint(target_domain, "userserver", "federation_receive")
-
-        if not Send_URL:
-            Send_URL = f"http://{target_domain}/federation/receive"  # Fallback
-
-        try:
-            requests.post(Send_URL, json=payload, timeout=5)
-            return jsonify({"status": "Sent"})
-        except Exception as e:
-            print(f"Validation error: {e}")
-            return jsonify({"error": "Offline"}), 500
+# --- NON-API ROUTES (media proxy, uploads, well-known, SPA) ---
 
 @app.route("/media/proxy")
 def media_proxy():
@@ -405,232 +242,29 @@ def media_proxy():
     if not url: return "Missing URL", 400
     file_hash = hashlib.md5(url.encode()).hexdigest()
     file_path = os.path.join(CACHE_DIR, file_hash)
-    # Bepaal het MIME-type op basis van de URL (bijv. image/png)
     mimetype, _ = mimetypes.guess_type(url)
-    if not mimetype: mimetype = 'image/jpeg' # Fallback
+    if not mimetype: mimetype = 'image/jpeg'
 
-    # 1. Serveer uit cache indien aanwezig en vers
     if os.path.exists(file_path):
         metadata = load_cache_metadata()
         creation_time = metadata.get(file_hash)
         if creation_time:
-            creation_time = float(creation_time)
-            age = datetime.utcnow().timestamp() - creation_time
+            age = datetime.utcnow().timestamp() - float(creation_time)
             if age < CACHE_TIME:
                 return send_file(file_path, mimetype=mimetype)
 
-    # 2. Downloaden als het niet in cache zit
     try:
         r = requests.get(url, timeout=10)
         if r.status_code == 200:
             with open(file_path, 'wb') as f:
                 f.write(r.content)
-            # Update metadata with creation time
             metadata = load_cache_metadata()
             metadata[file_hash] = datetime.utcnow().timestamp()
             save_cache_metadata(metadata)
-            # Gebruik BytesIO om de zojuist gedownloade content direct te sturen
             return send_file(io.BytesIO(r.content), mimetype=mimetype)
     except Exception as e:
         print(f"Proxy error: {e}")
         return "Failed to fetch image", 500
-
-@app.route("/api/upload", methods=["POST"])
-def upload_file():
-    if not hasattr(request, 'user') or request.user is None:
-        return "Unauthorized", 401
-    if 'file' not in request.files: return "No file", 400
-    file = request.files['file']
-    if file.filename == '': return "No filename", 400
-
-    filename = secure_filename(f"{uuid.uuid4()}_{file.filename}")
-    file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-
-    # Genereer de Markdown tag voor de gebruiker
-    file_url = f"http://{DOMAIN}/uploads/{filename}"
-    return jsonify({"markdown": f"![image]({file_url})", "url": file_url})
-
-# --- USER PROFILE ENDPOINTS ---
-
-@app.route("/api/userprofile/", methods=["GET"])
-def get_userprofile():
-    # Allow fetching own profile if authenticated
-    # Also allow fetching other user profile by username param (public, for federation)
-    username_param = request.args.get("user")
-
-    if username_param:
-        # Public endpoint - get profile by username (no auth required)
-        user = User.query.filter_by(username=username_param).first()
-        if not user:
-            return "User not found", 404
-        return jsonify({
-            "display_name": user.display_name or user.username,
-            "profile_pic": user.profile_pic or ""
-        })
-    else:
-        # Private endpoint - get own profile (auth required)
-        if not hasattr(request, 'user') or request.user is None:
-            return "Unauthorized", 401
-
-        user = request.user
-        return jsonify({
-            "display_name": user.display_name or user.username,
-            "username": user.username,
-            "domain": DOMAIN,
-            "full_id": f"{user.username}@{DOMAIN}",
-            "theme": user.theme or "dark",
-            "accent_color": user.accent_color or "#7eafff",
-            "profile_pic": user.profile_pic or ""
-        })
-
-@app.route("/api/userprofile/batch", methods=["POST"])
-def get_batch_profiles():
-    """Fetch profile pictures for batch of users"""
-    if not hasattr(request, 'user') or request.user is None:
-        return "Unauthorized", 401
-
-    data = request.get_json()
-    senders = data.get('senders', [])  # List of "username@domain"
-
-    profiles = {}
-
-    # Separate local and remote senders
-    remote_senders = []
-    for sender in senders:
-        if '@' not in sender:
-            continue
-        username, domain = sender.rsplit('@', 1)
-
-        if domain == DOMAIN:
-            # Local user
-            user = User.query.filter_by(username=username).first()
-            if user:
-                profiles[sender] = user.profile_pic
-        else:
-            # Remote user - collect for batch fetch
-            remote_senders.append((sender, username, domain))
-
-    # Batch fetch remote profiles
-    if remote_senders:
-        for sender, username, domain in remote_senders:
-            try:
-                profile_url = f"http://{domain}/api/userprofile/?user={username}"
-                resp = requests.get(profile_url, timeout=1)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    profiles[sender] = data.get('profile_pic')
-            except Exception:
-                profiles[sender] = None
-
-    return jsonify(profiles)
-
-
-def prefetch_profiles():
-    """Pre-cache multiple remote user profiles at once"""
-    if not hasattr(request, 'user') or request.user is None:
-        return "Unauthorized", 401
-
-    data = request.get_json()
-    users = data.get('users', [])  # List of "username@domain"
-
-    for sender in users:
-        if '@' not in sender:
-            continue
-
-        username, domain = sender.rsplit('@', 1)
-
-        # Skip if already cached
-        if domain == DOMAIN:
-            continue
-
-        existing = User.query.filter_by(id=f"{domain}/{username}").first()
-        if existing:
-            continue
-
-        # Fetch and cache
-        try:
-            profile_url = f"http://{domain}/api/userprofile/?user={username}"
-            resp = requests.get(profile_url, timeout=1)
-            if resp.status_code == 200:
-                data = resp.json()
-                remote_user = User(
-                    id=f"{domain}/{username}",
-                    username=username,
-                    password_hash="remote_user",
-                    display_name=data.get('display_name', username),
-                    profile_pic=data.get('profile_pic')
-                )
-                try:
-                    db.session.add(remote_user)
-                    db.session.commit()
-                except:
-                    db.session.rollback()
-        except Exception:
-            pass
-
-    return jsonify({"status": "ok"})
-
-
-def update_userprofile():
-    if not hasattr(request, 'user') or request.user is None:
-        return "Unauthorized", 401
-
-    data = request.get_json()
-    user = request.user
-
-    if 'display_name' in data:
-        user.display_name = data['display_name']
-    if 'theme' in data:
-        user.theme = data['theme']
-    if 'accent_color' in data:
-        user.accent_color = data['accent_color']
-    if 'profile_pic' in data:
-        user.profile_pic = data['profile_pic'] or None
-
-    db.session.commit()
-    return jsonify({"success": True})
-
-@app.route('/api/userprofile/picture', methods=['POST'])
-def upload_userprofile_picture():
-    if not hasattr(request, 'user') or request.user is None:
-        return "Unauthorized", 401
-
-    if 'file' not in request.files:
-        return "No file", 400
-
-    file = request.files['file']
-    if not file or file.filename == '':
-        return "Invalid file", 400
-
-    allowed_types = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp', 'image/svg+xml']
-    if file.mimetype not in allowed_types:
-        return "Unsupported file type", 400
-
-    filename = secure_filename(f"{uuid.uuid4()}_{file.filename}")
-    save_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(save_path)
-
-    # Store as proxied URL with full domain for instance-wide compatibility
-    direct_url = f"http://{DOMAIN}/uploads/{filename}"
-    pic_url = f"http://{DOMAIN}/media/proxy?url={direct_url}"
-
-    user = request.user
-    user.profile_pic = pic_url
-    db.session.commit()
-
-    return jsonify({"profile_pic": pic_url})
-
-@app.route('/api/userprofile/picture', methods=['DELETE'])
-def delete_userprofile_picture():
-    if not hasattr(request, 'user') or request.user is None:
-        return "Unauthorized", 401
-
-    user = request.user
-    user.profile_pic = None
-    db.session.commit()
-
-    return jsonify({"profile_pic": None})
-
 
 @app.route("/uploads/<filename>")
 def serve_upload(filename):
@@ -648,16 +282,22 @@ def serve_userserver_config():
         },
         "api": {
             "base": f"http://{DOMAIN}",
+            "docs": "/api/docs/",
+            "openapi": "/api/docs/openapi.json",
             "endpoints": {
-                "chats": "/api/chats",
-                "messages": "/api/messages",
-                "send_message": "/api/sendmessage",
+                "chats": "/api/chats/",
+                "messages": "/api/messages/",
+                "send_message": "/api/messages/",
+                "users_me": "/api/users/me",
+                "users": "/api/users/",
+                "invites": "/api/invites/",
+                "upload": "/api/upload/",
+                "auth_login": "/api/auth/login",
+                "auth_register": "/api/auth/register",
+                "auth_setup": "/api/auth/setup",
                 "federation_receive": "/federation/receive",
                 "federation_validate": "/federation/validate",
-                "upload": "/api/upload",
                 "media_proxy": "/media/proxy",
-                "userprofile": "/api/userprofile/",
-                "userprofile_picture": "/api/userprofile/picture"
             }
         },
         "capabilities": {
@@ -667,7 +307,6 @@ def serve_userserver_config():
             "media_upload": True
         }
     }
-
     return config, 200, {"Content-Type": "application/json; charset=utf-8"}
 
 # --- SERVE VITE SPA FROM /static ---

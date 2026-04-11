@@ -10,3 +10,4 @@ media_cache/
 uploads/
 .claude/
 frontend/node_modules/
+frontend/.vite/

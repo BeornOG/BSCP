@@ -18,10 +18,9 @@ export default function ChatPage() {
   const uploadFile = useUploadFile();
   const { data: profile } = useProfile();
 
-  const handleSelectChat = (chatId: string) => {
-    setActiveChatId(chatId);
-    const chat = chats?.find((c) => c.id === chatId);
-    if (chat) setActiveChatName(chat.display_name);
+  const handleSelectChat = (chat: { id: string; display_name: string }) => {
+    setActiveChatId(chat.id);
+    setActiveChatName(chat.display_name);
   };
 
   const handleNewChat = (receiver: string) => {
