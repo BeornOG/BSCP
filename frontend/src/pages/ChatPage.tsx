@@ -6,10 +6,12 @@ import ChatSidebar from '../components/chat/ChatSidebar';
 import MessageList from '../components/chat/MessageList';
 import MessageInput from '../components/chat/MessageInput';
 import { Avatar, Modal } from '../components/ui';
+import type { UserStatus } from '../components/ui/Avatar';
 
 export default function ChatPage() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [activeChatName, setActiveChatName] = useState('');
+  const [activeChatStatus, setActiveChatStatus] = useState<UserStatus>('offline');
   const [modalImage, setModalImage] = useState<string | null>(null);
 
   const { data: chats, isLoading: chatsLoading } = useChats();
@@ -28,16 +30,18 @@ export default function ChatPage() {
   const uploadFile = useUploadFile();
   const { data: profile } = useProfile();
 
-  const handleSelectChat = (chat: { id: string; display_name: string }) => {
+  const handleSelectChat = (chat: { id: string; display_name: string; status: UserStatus }) => {
     sendMessage.clearFailed();
     setActiveChatId(chat.id);
     setActiveChatName(chat.display_name);
+    setActiveChatStatus(chat.status);
   };
 
   const handleNewChat = (receiver: string) => {
     sendMessage.clearFailed();
     setActiveChatId(receiver);
     setActiveChatName(receiver);
+    setActiveChatStatus('offline');
   };
 
   const handleSend = (text: string) => {
@@ -81,7 +85,7 @@ export default function ChatPage() {
         ) : (
           <>
             <div className="flex items-center gap-3 px-6 py-4 border-b border-[#232529]">
-              <Avatar name={activeChatName} size="sm" />
+              <Avatar name={activeChatName} size="sm" status={activeChatStatus} />
               <h2 className="text-[#e8eaed] font-medium truncate">{activeChatName}</h2>
             </div>
 

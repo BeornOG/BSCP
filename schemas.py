@@ -33,6 +33,7 @@ class ChatObject(Schema):
     id = fields.String(dump_only=True, metadata={"description": "Chat partner's federated identity"})
     display_name = fields.String(dump_only=True, metadata={"description": "Display name of chat partner"})
     profile_pic = fields.String(dump_default=None, metadata={"description": "Profile picture URL"})
+    status = fields.String(dump_only=True, metadata={"description": "User status: online, offline, away, or dnd"})
 
 
 class InviteObject(Schema):

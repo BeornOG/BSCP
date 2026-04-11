@@ -89,7 +89,7 @@ const ChatSidebar: FC<ChatSidebarProps> = ({
               activeChatId === chat.id ? 'bg-[#1a1d21]' : ''
             }`}
           >
-            <Avatar size="sm" src={chat.profile_pic} name={chat.display_name} />
+            <Avatar size="sm" src={chat.profile_pic} name={chat.display_name} status={chat.status} />
             <div className="min-w-0">
               <span className="block truncate text-sm font-medium text-[#e8eaed]">
                 {chat.display_name}

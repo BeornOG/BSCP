@@ -6,10 +6,7 @@ from werkzeug.utils import secure_filename
 import uuid, os
 
 from schemas import UserProfile, UserSettingsUpdate, ProfilePicResponse, BatchProfileRequest
-from routes import require_auth, require_admin
-
-
-_STATUS_MAP = {0: "online", 1: "offline", 2: "away", 3: "dnd"}
+from routes import require_auth, require_admin, get_user_status
 
 users_blp = SmorestBlueprint("users", __name__, url_prefix="/api/users",
                               description="User profiles and account management")
@@ -21,7 +18,7 @@ def _serialize_profile(user, domain):
         "username": f"{user.username}@{domain}",
         "display_name": user.display_name or user.username,
         "profile_pic": user.profile_pic or None,
-        "status": _STATUS_MAP.get(user.Status_type, "online"),
+        "status": get_user_status(user),
     }
 
 

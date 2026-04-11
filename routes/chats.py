@@ -6,7 +6,7 @@ from datetime import datetime
 import uuid
 
 from schemas import ChatObject, MessageObject, MessagesQueryArgs, SendMessageBody
-from routes import require_auth
+from routes import require_auth, get_user_status
 
 
 chats_blp = SmorestBlueprint("chats", __name__, url_prefix="/api/chats",
@@ -36,6 +36,7 @@ class ChatListResource(MethodView):
         for partner in sorted(partners):
             display_name = partner.split("@")[0]
             profile_pic = None
+            status = "offline"
             if "@" in partner:
                 uname, domain = partner.split("@", 1)
                 if domain == DOMAIN:
@@ -44,8 +45,9 @@ class ChatListResource(MethodView):
                         if u.display_name:
                             display_name = u.display_name
                         profile_pic = u.profile_pic
+                        status = get_user_status(u)
 
-            chats.append({"id": partner, "display_name": display_name, "profile_pic": profile_pic})
+            chats.append({"id": partner, "display_name": display_name, "profile_pic": profile_pic, "status": status})
 
         return chats
 

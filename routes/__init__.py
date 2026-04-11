@@ -16,6 +16,14 @@ def require_admin():
         abort(403, message="Admin access required")
 
 
+STATUS_MAP = {0: "online", 1: "offline", 2: "away", 3: "dnd"}
+
+
+def get_user_status(user) -> str:
+    """Return the status string for a User model instance."""
+    return STATUS_MAP.get(user.Status_type, "online")
+
+
 # -- Blueprint registry (import order matters: new modules first) -----------
 from routes.auth import auth_blp                                        # noqa: E402
 from routes.users import users_blp                                      # noqa: E402

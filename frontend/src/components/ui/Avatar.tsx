@@ -1,11 +1,13 @@
 import type { FC } from 'react';
 
+export type UserStatus = 'online' | 'offline' | 'away' | 'dnd';
+
 interface AvatarProps {
   src?: string | null;
   fallback?: string;
   name?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
-  online?: boolean;
+  status?: UserStatus;
 }
 
 const sizeMap = {
@@ -22,7 +24,14 @@ const dotSizeMap = {
   xl: 'w-4 h-4',
 };
 
-const Avatar: FC<AvatarProps> = ({ src, fallback, name, size = 'md', online }) => (
+const statusColorMap: Record<UserStatus, string> = {
+  online: 'bg-green-500',
+  offline: 'bg-[#71747a]',
+  away: 'bg-yellow-500',
+  dnd: 'bg-red-500',
+};
+
+const Avatar: FC<AvatarProps> = ({ src, fallback, name, size = 'md', status }) => (
   <div className="relative inline-flex shrink-0">
     {src && src !== '' ? (
       <img
@@ -39,9 +48,9 @@ const Avatar: FC<AvatarProps> = ({ src, fallback, name, size = 'md', online }) =
         )}
       </div>
     )}
-    {online && (
+    {status && (
       <span
-        className={`absolute bottom-0 right-0 rounded-full border-2 border-[#0a0a0b] bg-green-500 ${dotSizeMap[size]}`}
+        className={`absolute bottom-0 right-0 rounded-full border-2 border-[#0a0a0b] ${statusColorMap[status]} ${dotSizeMap[size]}`}
       />
     )}
   </div>
