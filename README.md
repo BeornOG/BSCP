@@ -1,11 +1,36 @@
 # BSCP
+*Beorn's Stupid Chat Protocol* is designed as a federated discord/group chat alternative. It has been designed so that the original sender is responsable for making media available via embedding urls. it also is configured that any recieved media is proxied, and cached by the recuevers user server to prevent media being used to get other uses ip's.
 
-A federated chat platform with a React frontend and Flask backend.
+the goal it to also have channel servers. these are intended as replacements for discord guilds. these are intended to store messages in channels and providing the ability for only some people to get acces to certain channels.
+
+a username is defined as ``[user]@[domain]``
+a channel is defined as ``[domain]#[channel]#[subchannel]#[subchannel]``
+
+the protocol also supports /.well-known/BSCP/ for usecases where you want to use a domain but don't want the federation api there.
 
 ## Prerequisites
 
 - **Python 3.10+**
 - **Node.js 18+**
+node is only needed to compile front-end, not needed if you pre-compile the front-end on another device
+
+# userserver
+
+## Frontend Setup
+
+1. Install dependencies:
+
+   ```bash
+   cd frontend
+   npm install
+   ```
+
+2. Start the dev server:
+
+   ```bash
+   npm exec vite build
+   ```
+
 
 ## Backend Setup
 
@@ -40,26 +65,11 @@ A federated chat platform with a React frontend and Flask backend.
 
    The backend runs on `http://localhost:5000` with auto-reloading enabled.
 
-## Frontend Setup
 
-1. Install dependencies:
-
-   ```bash
-   cd frontend
-   npm install
-   ```
-
-2. Start the dev server:
-
-   ```bash
-   npm run dev
-   ```
-
-   The frontend runs on `http://localhost:5173` and proxies API requests to the Flask backend.
 
 ## First-Time Setup
 
-1. Open `http://localhost:5173` in your browser.
+1. Open `http://localhost:5000` in your browser.
 2. You'll be redirected to the setup page to create an admin account.
 3. After setup, log in with your new credentials.
 
