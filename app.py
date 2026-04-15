@@ -87,6 +87,19 @@ app.config['VAPID_PUBLIC_KEY'] = os.getenv('VAPID_PUBLIC_KEY', '').strip()
 app.config['VAPID_PRIVATE_KEY'] = os.getenv('VAPID_PRIVATE_KEY', '').strip()
 app.config['VAPID_CONTACT'] = os.getenv('VAPID_CONTACT', 'mailto:admin@localhost')
 
+_VAPID_KEYS_FILE = os.path.join(basedir, 'vapid_keys.json')
+
+if not app.config['VAPID_PRIVATE_KEY'] or not app.config['VAPID_PUBLIC_KEY']:
+    if os.path.exists(_VAPID_KEYS_FILE):
+        try:
+            with open(_VAPID_KEYS_FILE, 'r') as _f:
+                _keys = json.load(_f)
+            app.config['VAPID_PRIVATE_KEY'] = _keys['private_key']
+            app.config['VAPID_PUBLIC_KEY'] = _keys['public_key']
+            print('[VAPID] Loaded persistent VAPID keys.')
+        except Exception as exc:
+            print(f"[VAPID] Failed to load VAPID keys from file: {exc}")
+
 if not app.config['VAPID_PRIVATE_KEY'] or not app.config['VAPID_PUBLIC_KEY']:
     try:
         from cryptography.hazmat.primitives.asymmetric import ec
@@ -105,9 +118,15 @@ if not app.config['VAPID_PRIVATE_KEY'] or not app.config['VAPID_PUBLIC_KEY']:
         )
         app.config['VAPID_PRIVATE_KEY'] = private_bytes.decode('utf-8')
         app.config['VAPID_PUBLIC_KEY'] = urlsafe_b64encode(public_bytes).decode('ascii').rstrip('=')
-        print('[VAPID] Generated ephemeral VAPID keys for development.')
+        try:
+            with open(_VAPID_KEYS_FILE, 'w') as _f:
+                json.dump({'private_key': app.config['VAPID_PRIVATE_KEY'],
+                           'public_key': app.config['VAPID_PUBLIC_KEY']}, _f)
+            print('[VAPID] Generated and saved persistent VAPID keys.')
+        except Exception as exc:
+            print(f"[VAPID] Could not save VAPID keys to file: {exc}")
     except Exception as exc:
-        print(f"[VAPID] Failed to generate ephemeral VAPID keys: {exc}")
+        print(f"[VAPID] Failed to generate VAPID keys: {exc}")
 
 # OpenAPI / flask-smorest configuration
 app.config['API_TITLE'] = 'BSCP API'

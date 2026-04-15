@@ -21,6 +21,14 @@ export async function api<T = unknown>(url: string, opts?: RequestInit): Promise
     ...opts,
   });
 
+  if (res.status === 401) {
+    const authPaths = ['/login', '/register', '/setup', '/login/2fa'];
+    if (!authPaths.some((p) => window.location.pathname.startsWith(p))) {
+      window.location.href = '/login';
+    }
+    throw new ApiError(401, 'Unauthorized');
+  }
+
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new ApiError(res.status, body.message || body.error || body.errors?.join(', ') || res.statusText);

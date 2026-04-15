@@ -7,6 +7,7 @@ export function useChats() {
     queryKey: ['chats'],
     queryFn: () => api<Chat[]>('/api/chats/'),
     refetchInterval: 2000,
+    refetchIntervalInBackground: true,
     retry: 2,
   });
 }
