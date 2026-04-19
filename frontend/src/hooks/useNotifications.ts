@@ -74,6 +74,16 @@ export function initAudioContext() {
   if (audioContext) return;
   try {
     audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+
+    if (audioContext.state === 'suspended') {
+      const resume = () => {
+        audioContext?.resume().catch(() => {});
+        document.removeEventListener('click', resume);
+        document.removeEventListener('keypress', resume);
+      };
+      document.addEventListener('click', resume);
+      document.addEventListener('keypress', resume);
+    }
   } catch (err) {
     // Silent fail - audio context might not be available
   }
@@ -83,6 +93,9 @@ function playChime() {
   try {
     if (!audioContext) return;
     if (audioContext.state !== 'running') return;
+
+    const enableChime = localStorage.getItem('notif_chime') !== 'false';
+    if (!enableChime) return;
 
     const now = audioContext.currentTime;
     const oscillator = audioContext.createOscillator();
@@ -100,7 +113,7 @@ function playChime() {
     oscillator.start(now);
     oscillator.stop(now + 0.3);
   } catch (err) {
-    // Silent fail - audio might not be available
+    // Silent fail
   }
 }
 
@@ -137,8 +150,9 @@ export function useMessageNotifications() {
 
         const isActiveChat = chat.id === activeChatId;
         const shouldNotify = document.hidden || !isActiveChat;
+        const enableDesktopNotif = localStorage.getItem('notif_desktop') !== 'false';
 
-        if (shouldNotify && Notification.permission === 'granted') {
+        if (shouldNotify && enableDesktopNotif && Notification.permission === 'granted') {
           const title = chat.display_name;
           const body = 'New message';
           const options: NotificationOptions = {

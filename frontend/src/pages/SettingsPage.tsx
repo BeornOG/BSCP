@@ -15,6 +15,8 @@ export default function SettingsPage() {
   const [displayName, setDisplayName] = useState('');
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const [accentColor, setAccentColor] = useState(() => localStorage.getItem('accent_color') || '#6e8efb');
+  const [enableChime, setEnableChime] = useState(() => localStorage.getItem('notif_chime') !== 'false');
+  const [enableDesktopNotif, setEnableDesktopNotif] = useState(() => localStorage.getItem('notif_desktop') !== 'false');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -33,6 +35,14 @@ export default function SettingsPage() {
     document.documentElement.style.setProperty('--accent', accentColor);
     localStorage.setItem('accent_color', accentColor);
   }, [accentColor]);
+
+  useEffect(() => {
+    localStorage.setItem('notif_chime', enableChime ? 'true' : 'false');
+  }, [enableChime]);
+
+  useEffect(() => {
+    localStorage.setItem('notif_desktop', enableDesktopNotif ? 'true' : 'false');
+  }, [enableDesktopNotif]);
 
   const handleSave = () => {
     updateProfile.mutate({ display_name: displayName });
@@ -132,6 +142,31 @@ export default function SettingsPage() {
               aria-label={`Select color ${color}`}
             />
           ))}
+        </div>
+      </section>
+
+      {/* Notifications Section */}
+      <section className="space-y-4">
+        <h2 className="text-sm font-medium text-[#71747a] uppercase tracking-wide">Notifications</h2>
+        <div className="space-y-3">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={enableDesktopNotif}
+              onChange={(e) => setEnableDesktopNotif(e.target.checked)}
+              className="w-5 h-5 rounded border-[#232529] bg-[#141517] accent-[var(--accent)]"
+            />
+            <span className="text-sm text-[#e8eaed]">Desktop notifications</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={enableChime}
+              onChange={(e) => setEnableChime(e.target.checked)}
+              className="w-5 h-5 rounded border-[#232529] bg-[#141517] accent-[var(--accent)]"
+            />
+            <span className="text-sm text-[#e8eaed]">Message chime sound</span>
+          </label>
         </div>
       </section>
 
