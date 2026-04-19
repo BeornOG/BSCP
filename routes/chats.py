@@ -4,6 +4,7 @@ from flask_smorest import Blueprint as SmorestBlueprint, abort
 from flask import request, current_app
 from datetime import datetime
 import uuid
+from sqlalchemy import or_
 
 from schemas import ChatObject, MessageObject, MessagesQueryArgs, SendMessageBody
 from routes import require_auth
@@ -55,12 +56,21 @@ class ChatListResource(MethodView):
                 Message.is_read == False
             ).count()
 
+            last_msg = db.session.query(Message).filter(
+                or_(
+                    (Message.sender == partner) & (Message.receiver == me),
+                    (Message.sender == me) & (Message.receiver == partner)
+                )
+            ).order_by(Message.timestamp.desc()).first()
+
             chats.append({
                 "id": partner,
                 "display_name": display_name,
                 "profile_pic": profile_pic,
                 "status": status,
                 "unread_count": unread_count,
+                "last_message_text": last_msg.text if last_msg else None,
+                "last_message_sender": last_msg.sender if last_msg else None,
             })
 
         return chats

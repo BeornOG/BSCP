@@ -1,9 +1,11 @@
 import type { ReactNode } from "react";
+import { useEffect } from "react";
 import { NavLink } from "react-router-dom";
 import { useProfile } from "../../hooks/useProfile";
 import { useIsAdmin } from "../../hooks/useAdmin";
 import { useUserActivityPing } from "../../hooks/useActivity";
-import { usePushNotifications, useMessageNotifications } from "../../hooks/useNotifications";
+import { usePushNotifications, useMessageNotifications, initAudioContext } from "../../hooks/useNotifications";
+import { useChats } from "../../hooks/useChats";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -19,6 +21,13 @@ export default function AppLayout({ children }: AppLayoutProps) {
   useUserActivityPing();
   const { data: profile, isLoading } = useProfile();
   const { data: isAdmin } = useIsAdmin();
+  const { data: chats } = useChats();
+
+  const totalUnread = chats?.reduce((sum, chat) => sum + chat.unread_count, 0) ?? 0;
+
+  useEffect(() => {
+    initAudioContext();
+  }, []);
 
   const allNavItems = isAdmin
     ? [...navItems, { path: "/admin", icon: "admin_panel_settings", label: "Admin" }]
@@ -31,23 +40,29 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
         <div className="flex-1 flex flex-col items-center gap-2">
           {allNavItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              end={item.path === "/"}
-              className={({ isActive }) =>
-                `w-10 h-10 flex items-center justify-center rounded-xl transition-colors ${
-                  isActive
-                    ? "bg-[#232529] text-[#e8eaed]"
-                    : "text-[#71747a] hover:text-[#e8eaed] hover:bg-[#232529]/50"
-                }`
-              }
-              title={item.label}
-            >
-              <span className="material-symbols-outlined text-[20px]">
-                {item.icon}
-              </span>
-            </NavLink>
+            <div key={item.path} className="relative">
+              <NavLink
+                to={item.path}
+                end={item.path === "/"}
+                className={({ isActive }) =>
+                  `w-10 h-10 flex items-center justify-center rounded-xl transition-colors ${
+                    isActive
+                      ? "bg-[#232529] text-[#e8eaed]"
+                      : "text-[#71747a] hover:text-[#e8eaed] hover:bg-[#232529]/50"
+                  }`
+                }
+                title={item.label}
+              >
+                <span className="material-symbols-outlined text-[20px]">
+                  {item.icon}
+                </span>
+              </NavLink>
+              {item.path === "/" && totalUnread > 0 && (
+                <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center">
+                  {totalUnread > 9 ? "9+" : totalUnread}
+                </div>
+              )}
+            </div>
           ))}
         </div>
 

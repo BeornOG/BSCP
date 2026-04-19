@@ -63,9 +63,51 @@ export function usePushNotifications() {
   }, []);
 }
 
+let audioContext: AudioContext | null = null;
+let activeChatId: string | null = null;
+
+export function setActiveChatId(chatId: string | null) {
+  activeChatId = chatId;
+}
+
+export function initAudioContext() {
+  if (audioContext) return;
+  try {
+    audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+  } catch (err) {
+    // Silent fail - audio context might not be available
+  }
+}
+
+function playChime() {
+  try {
+    if (!audioContext) return;
+    if (audioContext.state !== 'running') return;
+
+    const now = audioContext.currentTime;
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    oscillator.frequency.value = 800;
+    oscillator.type = 'sine';
+
+    gainNode.gain.setValueAtTime(0.3, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+
+    oscillator.start(now);
+    oscillator.stop(now + 0.3);
+  } catch (err) {
+    // Silent fail - audio might not be available
+  }
+}
+
 export function useMessageNotifications() {
   const { data: chats } = useChats();
   const prevUnread = useRef<Record<string, number> | null>(null);
+  const totalUnread = useRef(0);
 
   useEffect(() => {
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
@@ -77,32 +119,66 @@ export function useMessageNotifications() {
     if (!chats) return;
 
     const counts = Object.fromEntries(chats.map((c) => [c.id, c.unread_count]));
+    const newTotal = Object.values(counts).reduce((sum, count) => sum + count, 0);
 
     if (prevUnread.current === null) {
       prevUnread.current = counts;
-      return;
-    }
-
-    if (Notification.permission !== 'granted') {
-      prevUnread.current = counts;
+      totalUnread.current = newTotal;
+      updateTabBadge(newTotal);
       return;
     }
 
     const prev = prevUnread.current;
+
     for (const chat of chats) {
       const prevCount = prev[chat.id] ?? 0;
       if (chat.unread_count > prevCount) {
-        const title = chat.display_name;
-        const options: NotificationOptions = { body: 'New message', tag: `chat-${chat.id}` };
-        navigator.serviceWorker.getRegistration()
-          .then((reg) => {
-            if (reg) return reg.showNotification(title, options);
-            new Notification(title, options);
-          })
-          .catch(() => { new Notification(title, options); });
+        playChime();
+
+        const isActiveChat = chat.id === activeChatId;
+        const shouldNotify = document.hidden || !isActiveChat;
+
+        if (shouldNotify && Notification.permission === 'granted') {
+          const title = chat.display_name;
+          const body = 'New message';
+          const options: NotificationOptions = {
+            body,
+            tag: `chat-${chat.id}`,
+            renotify: true,
+          } as NotificationOptions;
+
+          try {
+            const notif = new Notification(title, options);
+            notif.onclick = () => {
+              window.focus();
+              notif.close();
+            };
+          } catch (err) {
+            console.error('[NOTIF] Failed to show notification:', err);
+          }
+        }
       }
     }
 
     prevUnread.current = counts;
+    totalUnread.current = newTotal;
+    updateTabBadge(newTotal);
   }, [chats]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && totalUnread.current === 0) {
+        document.title = 'Chat';
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+}
+
+function updateTabBadge(count: number) {
+  if (typeof document === 'undefined') return;
+  const baseTitle = 'Chat';
+  document.title = count > 0 ? `(${count}) ${baseTitle}` : baseTitle;
 }

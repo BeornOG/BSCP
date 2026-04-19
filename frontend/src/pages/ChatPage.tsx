@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useChats } from '../hooks/useChats';
 import { useMessages, useSendMessage, useUploadFile } from '../hooks/useMessages';
 import { useProfile } from '../hooks/useProfile';
+import { setActiveChatId as notifyActiveChatId } from '../hooks/useNotifications';
 import ChatSidebar from '../components/chat/ChatSidebar';
 import MessageList from '../components/chat/MessageList';
 import MessageInput from '../components/chat/MessageInput';
@@ -22,14 +23,29 @@ export default function ChatPage() {
 
   const messages = useMemo(() => {
     const server = serverMessages || [];
-    // Filter out pending messages that already appear in server data
     const local = sendMessage.localMessages.filter((lm) =>
       lm.id.startsWith('failed-') ||
       !server.some((sm) => sm.sender === lm.sender && sm.text === lm.text)
     );
-    return [...server, ...local].sort((a, b) => a.timestamp - b.timestamp);
-  }, [serverMessages, sendMessage.localMessages]);
+    const allMessages = [...server, ...local].sort((a, b) => a.timestamp - b.timestamp);
+
+    const currentChat = chats?.find((c) => c.id === activeChatId);
+    if (currentChat && currentChat.unread_count > 0) {
+      const unreadCount = currentChat.unread_count;
+      const startIndex = Math.max(0, allMessages.length - unreadCount);
+      return allMessages.map((msg, idx) => ({
+        ...msg,
+        is_read: idx < startIndex,
+      }));
+    }
+
+    return allMessages;
+  }, [serverMessages, sendMessage.localMessages, chats, activeChatId]);
   const uploadFile = useUploadFile();
+
+  useEffect(() => {
+    notifyActiveChatId(activeChatId);
+  }, [activeChatId]);
 
   const handleSelectChat = (chat: { id: string; display_name: string; profile_pic: string | null; status: UserStatus }) => {
     sendMessage.clearFailed();

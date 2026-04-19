@@ -13,6 +13,8 @@ export interface Chat {
   profile_pic: string | null;
   status: 'online' | 'offline' | 'away' | 'dnd';
   unread_count: number;
+  last_message_text?: string;
+  last_message_sender?: string;
 }
 
 export interface UserProfile {

@@ -35,6 +35,7 @@ const MessageList: FC<MessageListProps> = ({
   const hasInitialUnread = firstUnreadIndex !== -1;
   const showUnreadBoundary = hasInitialUnread && !hideUnreadBoundary;
 
+
   // Fetch profile pics for new senders
   useEffect(() => {
     const newSenders = messages
@@ -64,28 +65,32 @@ const MessageList: FC<MessageListProps> = ({
   // Reset auto-scroll state when switching conversations
   useEffect(() => {
     shouldAutoScroll.current = true;
-    prevMessageCount.current = 0;
+    prevMessageCount.current = messages.length;
     setHasDoneInitialScroll(false);
     setHideUnreadBoundary(false);
-  }, [chatId]);
+  }, [chatId, messages.length]);
 
-  // Track scroll position to decide auto-scroll and hide unread boundary if user reaches bottom
+  // Track scroll position to decide auto-scroll
   const handleScroll = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     const atBottom = distanceFromBottom <= 60;
     shouldAutoScroll.current = atBottom;
-    if (atBottom && showUnreadBoundary) {
-      setHideUnreadBoundary(true);
-    }
-  }, [showUnreadBoundary]);
+  }, []);
 
   useEffect(() => {
     if (!chatId || hasDoneInitialScroll || messages.length === 0) return;
 
     if (firstUnreadIndex !== -1) {
-      unreadMarkerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      unreadMarkerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Auto-hide boundary after 5 seconds
+      const timeout = setTimeout(() => {
+        setHideUnreadBoundary(true);
+      }, 5000);
+
+      return () => clearTimeout(timeout);
     } else {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
@@ -93,16 +98,15 @@ const MessageList: FC<MessageListProps> = ({
     setHasDoneInitialScroll(true);
   }, [chatId, firstUnreadIndex, hasDoneInitialScroll, messages.length]);
 
-  // Auto-scroll on new messages
+  // Auto-scroll on new messages (but not until initial scroll is done)
   useEffect(() => {
+    if (!hasDoneInitialScroll) return;
+
     if (messages.length > prevMessageCount.current || shouldAutoScroll.current) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-      if (showUnreadBoundary) {
-        setHideUnreadBoundary(true);
-      }
     }
     prevMessageCount.current = messages.length;
-  }, [messages, showUnreadBoundary]);
+  }, [messages, showUnreadBoundary, hasDoneInitialScroll]);
 
   // Click delegation for images
   const handleClick = (e: MouseEvent<HTMLDivElement>) => {

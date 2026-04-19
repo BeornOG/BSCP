@@ -96,7 +96,7 @@ const ChatSidebar: FC<ChatSidebarProps> = ({
                   {chat.display_name}
                 </span>
                 {chat.unread_count > 0 && (
-                  <Badge variant="success">{chat.unread_count}</Badge>
+                  <Badge variant="unread">{chat.unread_count}</Badge>
                 )}
               </div>
               <span className="block truncate text-xs text-[#71747a]">
