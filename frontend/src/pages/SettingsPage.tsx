@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useProfile, useUpdateProfile, useUploadProfilePic, useDeleteProfilePic } from '../hooks/useProfile';
+import { useWebhooks, useCreateWebhook, useDeleteWebhook, useRegenerateWebhook } from '../hooks/useWebhooks';
 import { useLogout } from '../hooks/useAuth';
 import { Avatar, Button, Input, Spinner } from '../components/ui';
 
@@ -7,16 +8,24 @@ const ACCENT_COLORS = ['#6e8efb', '#ff716c', '#e9caf0', '#4d3755', '#28a745'];
 
 export default function SettingsPage() {
   const { data: profile, isLoading } = useProfile();
+  const { data: webhooks = [] } = useWebhooks();
   const updateProfile = useUpdateProfile();
   const uploadPic = useUploadProfilePic();
   const deletePic = useDeleteProfilePic();
   const logout = useLogout();
+  const createWebhook = useCreateWebhook();
+  const deleteWebhook = useDeleteWebhook();
+  const regenerateWebhook = useRegenerateWebhook();
 
   const [displayName, setDisplayName] = useState('');
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const [accentColor, setAccentColor] = useState(() => localStorage.getItem('accent_color') || '#6e8efb');
   const [enableChime, setEnableChime] = useState(() => localStorage.getItem('notif_chime') !== 'false');
   const [enableDesktopNotif, setEnableDesktopNotif] = useState(() => localStorage.getItem('notif_desktop') !== 'false');
+  const [showWebhookDialog, setShowWebhookDialog] = useState(false);
+  const [webhookName, setWebhookName] = useState('');
+  const [webhookAvatarUrl, setWebhookAvatarUrl] = useState('');
+  const [copiedWebhookId, setCopiedWebhookId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -51,6 +60,26 @@ export default function SettingsPage() {
   const handlePicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) uploadPic.mutate(file);
+  };
+
+  const handleCreateWebhook = () => {
+    if (!webhookName.trim()) return;
+    createWebhook.mutate({
+      name: webhookName,
+      avatar_url: webhookAvatarUrl || undefined,
+    }, {
+      onSuccess: () => {
+        setWebhookName('');
+        setWebhookAvatarUrl('');
+        setShowWebhookDialog(false);
+      },
+    });
+  };
+
+  const handleCopyWebhook = (url: string, webhookId: string) => {
+    navigator.clipboard.writeText(url);
+    setCopiedWebhookId(webhookId);
+    setTimeout(() => setCopiedWebhookId(null), 2000);
   };
 
   if (isLoading) {
@@ -168,6 +197,102 @@ export default function SettingsPage() {
             <span className="text-sm text-[#e8eaed]">Message chime sound</span>
           </label>
         </div>
+      </section>
+
+      {/* Webhooks Section */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium text-[#71747a] uppercase tracking-wide">Webhooks</h2>
+          <Button
+            onClick={() => setShowWebhookDialog(true)}
+            className="text-xs px-3 py-1.5 bg-[var(--accent)] text-black hover:bg-[var(--accent)]/90"
+          >
+            Create
+          </Button>
+        </div>
+
+        {webhooks.length === 0 ? (
+          <p className="text-sm text-[#71747a]">No webhooks yet. Create one to receive messages via incoming webhooks.</p>
+        ) : (
+          <div className="space-y-3">
+            {webhooks.map((webhook) => (
+              <div key={webhook.id} className="p-4 rounded-lg bg-[#141517] border border-[#232529] space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {webhook.profile_pic && (
+                      <img src={webhook.profile_pic} alt={webhook.name} className="w-8 h-8 rounded-full" />
+                    )}
+                    <span className="text-sm font-medium text-[#e8eaed]">{webhook.name}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleCopyWebhook(webhook.url, webhook.id)}
+                      className="text-xs px-2 py-1 rounded bg-[#232529] text-[#71747a] hover:bg-[#333] transition-colors"
+                    >
+                      {copiedWebhookId === webhook.id ? 'Copied!' : 'Copy URL'}
+                    </button>
+                    <button
+                      onClick={() => regenerateWebhook.mutate(webhook.id)}
+                      className="text-xs px-2 py-1 rounded bg-[#232529] text-[#71747a] hover:bg-[#333] transition-colors"
+                      disabled={regenerateWebhook.isPending}
+                    >
+                      {regenerateWebhook.isPending ? 'Regen...' : 'Regenerate'}
+                    </button>
+                    <button
+                      onClick={() => deleteWebhook.mutate(webhook.id)}
+                      className="text-xs px-2 py-1 rounded bg-[#232529] text-red-400 hover:bg-red-400/20 transition-colors"
+                      disabled={deleteWebhook.isPending}
+                    >
+                      {deleteWebhook.isPending ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+                <div className="text-xs text-[#71747a] space-y-1">
+                  <div>Created: {new Date(webhook.created_at * 1000).toLocaleDateString()}</div>
+                  {webhook.last_used && <div>Last used: {new Date(webhook.last_used * 1000).toLocaleString()}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {showWebhookDialog && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-[#141517] rounded-lg border border-[#232529] p-6 max-w-sm w-full mx-4 space-y-4">
+              <h3 className="text-lg font-semibold text-[#e8eaed]">Create Webhook</h3>
+              <Input
+                placeholder="Webhook name (e.g., GitHub)"
+                value={webhookName}
+                onChange={(e) => setWebhookName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCreateWebhook()}
+              />
+              <Input
+                placeholder="Avatar URL (optional)"
+                value={webhookAvatarUrl}
+                onChange={(e) => setWebhookAvatarUrl(e.target.value)}
+              />
+              <div className="flex gap-3 justify-end">
+                <Button
+                  onClick={() => {
+                    setShowWebhookDialog(false);
+                    setWebhookName('');
+                    setWebhookAvatarUrl('');
+                  }}
+                  className="bg-transparent border border-[#232529] text-[#e8eaed] hover:bg-[#141517]"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleCreateWebhook}
+                  disabled={createWebhook.isPending || !webhookName.trim()}
+                  className="bg-[var(--accent)] text-black hover:bg-[var(--accent)]/90"
+                >
+                  {createWebhook.isPending ? 'Creating...' : 'Create'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Actions */}

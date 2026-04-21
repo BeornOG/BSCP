@@ -258,6 +258,7 @@ class User(db.Model):
     # Relatie naar actieve apparaten/sessies
     sessions = db.relationship('UserSession', backref='user', lazy=True, cascade="all, delete-orphan")
     push_subscriptions = db.relationship('PushSubscription', backref='user', lazy=True, cascade="all, delete-orphan")
+    webhooks = db.relationship('Webhook', backref='user', lazy=True, cascade="all, delete-orphan")
 
 class UserSession(db.Model):
     id = db.Column(db.String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -291,6 +292,16 @@ class InviteCode(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now)
     used_at = db.Column(db.DateTime)
     expires_at = db.Column(db.DateTime)
+
+class Webhook(db.Model):
+    id = db.Column(db.String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = db.Column(db.String(255), db.ForeignKey('user.id'), nullable=False)
+    channel_id = db.Column(db.String(255))
+    name = db.Column(db.String(100), nullable=False)
+    token = db.Column(db.String(64), unique=True, nullable=False)
+    profile_pic = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    last_used = db.Column(db.DateTime)
 
 
 def send_push_notification(user, title, body, url='/'):
@@ -393,6 +404,66 @@ def media_proxy():
 def serve_upload(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
+@app.route("/webhooks/<webhook_id>/<webhook_token>", methods=["POST"])
+def receive_webhook(webhook_id, webhook_token):
+    """Receive incoming webhook and send as DM"""
+    from schemas import WebhookPayload
+    from marshmallow import ValidationError
+
+    payload_schema = WebhookPayload()
+
+    # Parse and validate JSON
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Missing JSON body"}), 400
+        data = payload_schema.load(data)
+    except ValidationError as err:
+        return jsonify({"errors": err.messages}), 400
+    except Exception as err:
+        return jsonify({"error": str(err)}), 400
+
+    # Find webhook
+    webhook = db.session.query(Webhook).filter_by(id=webhook_id, token=webhook_token).first()
+    if not webhook:
+        return jsonify({"error": "Invalid webhook"}), 404
+
+    # Update last_used
+    webhook.last_used = datetime.now()
+    db.session.commit()
+
+    # Create message
+    msg_uuid = str(uuid.uuid4())
+    full_id = f"{DOMAIN}/{msg_uuid}"
+    val_key = "key-" + msg_uuid[:8]
+
+    sender = f"webhook-{webhook.id}@{DOMAIN}"
+
+    receiver = f"{webhook.user.username}@{DOMAIN}"
+
+    new_msg = Message(
+        id=full_id,
+        sender=sender,
+        receiver=receiver,
+        text=data["content"],
+        validation_key=val_key,
+    )
+    db.session.add(new_msg)
+    db.session.commit()
+
+    # Send push notification
+    send_push_notification(
+        webhook.user,
+        f"Message from {webhook.name}",
+        data["content"],
+        url='/',
+    )
+
+    return jsonify({
+        "success": True,
+        "message_id": full_id,
+    }), 201
+
 @app.route("/.well-known/BSCP/userserver")
 @app.route("/.well-known/BSCP/userserver.json")
 def serve_userserver_config():
@@ -418,6 +489,7 @@ def serve_userserver_config():
                 "auth_login": "/api/auth/login",
                 "auth_register": "/api/auth/register",
                 "auth_setup": "/api/auth/setup",
+                "webhooks": "/api/user/webhooks",
                 "federation_receive": "/federation/receive",
                 "federation_validate": "/federation/validate",
                 "media_proxy": "/media/proxy",
@@ -427,7 +499,8 @@ def serve_userserver_config():
             "federation": True,
             "channels": False,
             "direct_messaging": True,
-            "media_upload": True
+            "media_upload": True,
+            "webhooks": True
         }
     }
     return config, 200, {"Content-Type": "application/json; charset=utf-8"}

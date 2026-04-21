@@ -9,6 +9,7 @@ interface MessageBubbleProps {
   isPending: boolean;
   isFailed: boolean;
   profilePic?: string;
+  displayName?: string;
 }
 
 /** Convert bare image/video URLs into markdown/HTML */
@@ -48,6 +49,7 @@ const MessageBubble: FC<MessageBubbleProps> = ({
   isPending,
   isFailed,
   profilePic,
+  displayName,
 }) => {
   const renderedHtml = renderMarkdown(message.text);
 
@@ -64,6 +66,8 @@ const MessageBubble: FC<MessageBubbleProps> = ({
       ? 'Failed'
       : formatTime(message.timestamp);
 
+  const senderName = displayName || message.sender.split('@')[0];
+
   return (
     <div
       className={`flex gap-2.5 ${isOwn ? 'flex-row-reverse' : 'flex-row'} ${
@@ -76,7 +80,7 @@ const MessageBubble: FC<MessageBubbleProps> = ({
       />
 
       <div className={`flex max-w-[70%] flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
-        <span className="mb-1 text-xs text-[#71747a]">{message.sender}</span>
+        <span className="mb-1 text-xs text-[#71747a]">{senderName}</span>
 
         <div
           className={`msg-content rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${

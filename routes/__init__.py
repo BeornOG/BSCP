@@ -53,5 +53,6 @@ from routes.users import users_blp                                      # noqa: 
 from routes.chats import chats_blp                                      # noqa: E402
 from routes.uploads import uploads_blp                                  # noqa: E402
 from routes.invites import invites_blp                                  # noqa: E402
+from routes.webhooks import webhooks_blp                                # noqa: E402
 
-ALL_BLUEPRINTS = [auth_blp, users_blp, chats_blp, uploads_blp, invites_blp]
+ALL_BLUEPRINTS = [auth_blp, users_blp, chats_blp, uploads_blp, invites_blp, webhooks_blp]
