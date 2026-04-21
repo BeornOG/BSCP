@@ -113,3 +113,7 @@ python app.py Testing/NodeB.env
 ```
 
 Each node gets its own database and port as defined in its env file.
+
+## Webhooks
+
+See [WEBHOOKS.md](WEBHOOKS.md) for documentation on creating and using webhooks to send messages via external services.
