@@ -10,6 +10,7 @@ interface MessageBubbleProps {
   isFailed: boolean;
   profilePic?: string;
   displayName?: string;
+  onAvatarClick?: (sender: string) => void;
 }
 
 /** Convert bare image/video URLs into markdown/HTML */
@@ -50,6 +51,7 @@ const MessageBubble: FC<MessageBubbleProps> = ({
   isFailed,
   profilePic,
   displayName,
+  onAvatarClick,
 }) => {
   const renderedHtml = renderMarkdown(message.text);
 
@@ -74,10 +76,15 @@ const MessageBubble: FC<MessageBubbleProps> = ({
         isPending ? 'opacity-60' : ''
       }`}
     >
-      <Avatar
-        src={profilePic}
-        size="sm"
-      />
+      <div
+        onClick={() => onAvatarClick?.(message.sender)}
+        className="cursor-pointer hover:opacity-80 transition-opacity"
+      >
+        <Avatar
+          src={profilePic}
+          size="sm"
+        />
+      </div>
 
       <div className={`flex max-w-[70%] flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
         <span className="mb-1 text-xs text-[#71747a]">{senderName}</span>
