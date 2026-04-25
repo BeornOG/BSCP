@@ -26,6 +26,7 @@ export interface UserProfile {
   is_primary_admin?: boolean;
   is_2fa_enabled: boolean;
   bio?: string;
+  storage_limit_mb?: number;
 }
 
 export interface Invite {

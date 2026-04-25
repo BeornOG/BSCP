@@ -15,6 +15,7 @@ def serialize_profile(user, domain):
         "is_primary_admin": user.is_primary_admin,
         "is_2fa_enabled": user.is_2fa_enabled,
         "bio": user.bio or None,
+        "storage_limit_mb": user.storage_limit_mb,
     }
 
 

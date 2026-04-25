@@ -61,6 +61,7 @@ class UserProfile(Schema):
     is_primary_admin = fields.Boolean(dump_only=True, metadata={"description": "Whether user is the primary/initial admin"})
     is_2fa_enabled = fields.Boolean(dump_only=True, metadata={"description": "Whether 2FA is enabled"})
     bio = fields.String(allow_none=True, metadata={"description": "User bio/about"})
+    storage_limit_mb = fields.Integer(dump_only=True, metadata={"description": "User's storage limit in MB"})
 
 
 class PushSubscriptionKeys(Schema):
@@ -249,5 +250,17 @@ class ServerConfigUpdate(Schema):
 
 class ServerConfigResponse(Schema):
     """Current server configuration."""
-    storage_limit_mb = fields.Integer(metadata={"description": "Storage limit per user in MB"})
+    storage_limit_mb = fields.Integer(metadata={"description": "Default storage limit for new users in MB"})
+
+
+class UserStorageConfigUpdate(Schema):
+    """Request to update user's storage limit."""
+    storage_limit_mb = fields.Integer(metadata={"description": "Storage limit for user in MB"})
+
+
+class UserStorageConfigResponse(Schema):
+    """User's storage configuration."""
+    user_id = fields.String(metadata={"description": "User ID"})
+    username = fields.String(metadata={"description": "Username"})
+    storage_limit_mb = fields.Integer(metadata={"description": "Storage limit in MB"})
 

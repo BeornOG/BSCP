@@ -30,14 +30,8 @@ class UploadResource(MethodView):
 
         # Skip storage limits for primary admin
         if not request.user.is_primary_admin:
-            # Get config and check storage limit
-            config = db.session.query(ServerConfig).first()
-            if not config:
-                config = ServerConfig()
-                db.session.add(config)
-                db.session.commit()
-
-            limit_bytes = config.storage_limit_mb * 1024 * 1024
+            # Get user's individual storage limit
+            limit_bytes = request.user.storage_limit_mb * 1024 * 1024
 
             # Read file into memory to get size
             file.seek(0, os.SEEK_END)
@@ -45,14 +39,14 @@ class UploadResource(MethodView):
             file.seek(0)
 
             if file_size > limit_bytes:
-                abort(413, message=f"File exceeds size limit of {config.storage_limit_mb}MB")
+                abort(413, message=f"File exceeds size limit of {request.user.storage_limit_mb}MB")
 
             # Check user's total storage
             user_uploads = db.session.query(Upload).filter_by(uploaded_by=request.user.id).all()
             total_size = sum(u.size_bytes for u in user_uploads)
 
             if total_size + file_size > limit_bytes:
-                abort(413, message=f"Insufficient storage. Used: {total_size // (1024*1024)}MB / {config.storage_limit_mb}MB")
+                abort(413, message=f"Insufficient storage. Used: {total_size // (1024*1024)}MB / {request.user.storage_limit_mb}MB")
         else:
             # Primary admin - just get file size
             file.seek(0, os.SEEK_END)
@@ -108,18 +102,12 @@ class UserUploadsResource(MethodView):
     def get(self):
         """Get user's uploads and storage usage"""
         require_auth()
-        from app import Upload, ServerConfig
+        from app import Upload
         db = current_app.extensions['sqlalchemy']
-
-        config = db.session.query(ServerConfig).first()
-        if not config:
-            config = ServerConfig()
-            db.session.add(config)
-            db.session.commit()
 
         uploads = db.session.query(Upload).filter_by(uploaded_by=request.user.id).all()
         total_size = sum(u.size_bytes for u in uploads)
-        limit_bytes = config.storage_limit_mb * 1024 * 1024
+        limit_bytes = request.user.storage_limit_mb * 1024 * 1024
 
         upload_objs = []
         for u in uploads:

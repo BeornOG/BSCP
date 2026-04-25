@@ -1,10 +1,22 @@
 import { useState, useEffect } from 'react';
 import { useAdminConfig, useUpdateAdminConfig } from '../../hooks/useAdminConfig';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../../lib/api';
 import { Button, Input } from '../ui';
+import UserStorageManager from './UserStorageManager';
+import { formatStorageMB } from '../../lib/format';
+
+interface UserList {
+  users: Array<{ id: string; username: string; storage_limit_mb: number }>;
+}
 
 export default function StorageSettings() {
   const { data: config, isLoading } = useAdminConfig();
   const updateConfig = useUpdateAdminConfig();
+  const { data: userList, isLoading: usersLoading } = useQuery<UserList>({
+    queryKey: ['users:storage'],
+    queryFn: () => api<UserList>('/api/users'),
+  });
   const [storageLimit, setStorageLimit] = useState('500');
 
   useEffect(() => {
@@ -25,21 +37,26 @@ export default function StorageSettings() {
   if (isLoading) return <p>Loading settings...</p>;
 
   return (
-    <div className="space-y-4">
-      <h3 className="font-semibold">Storage Configuration (Admin)</h3>
-
+    <div className="space-y-6">
       <div>
-        <label className="block text-sm font-medium mb-2">
-          Per-User Storage Limit (MB)
-        </label>
+        <h3 className="font-semibold mb-4">Default Storage Limit</h3>
+        <p className="text-xs text-gray-400 mb-3">
+          Default limit applied to new users. Existing users can have individual limits set.
+        </p>
         <div className="flex gap-2">
-          <Input
-            type="number"
-            min="1"
-            value={storageLimit}
-            onChange={(e) => setStorageLimit(e.target.value)}
-            className="flex-1"
-          />
+          <div className="flex-1">
+            <Input
+              type="number"
+              min="1"
+              value={storageLimit}
+              onChange={(e) => setStorageLimit(e.target.value)}
+            />
+            {storageLimit && (
+              <p className="text-xs text-gray-400 mt-1">
+                = {formatStorageMB(parseInt(storageLimit))}
+              </p>
+            )}
+          </div>
           <Button
             onClick={handleUpdate}
             disabled={updateConfig.isPending}
@@ -47,16 +64,22 @@ export default function StorageSettings() {
             {updateConfig.isPending ? 'Saving...' : 'Save'}
           </Button>
         </div>
-        <p className="text-xs text-gray-400 mt-2">
-          Controls maximum storage per user across all uploads.
-        </p>
+
+        {updateConfig.isSuccess && (
+          <p className="text-sm text-green-400 mt-2">Updated!</p>
+        )}
+        {updateConfig.isError && (
+          <p className="text-sm text-red-400 mt-2">Failed to update</p>
+        )}
       </div>
 
-      {updateConfig.isSuccess && (
-        <p className="text-sm text-green-400">Settings updated successfully!</p>
-      )}
-      {updateConfig.isError && (
-        <p className="text-sm text-red-400">Failed to update settings</p>
+      {userList && userList.users && (
+        <div className="border-t border-[#232529] pt-4">
+          <UserStorageManager
+            users={userList.users}
+            isLoading={usersLoading}
+          />
+        </div>
       )}
     </div>
   );

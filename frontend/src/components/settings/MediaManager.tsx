@@ -1,14 +1,7 @@
 import { useUploads, useDeleteUpload } from '../../hooks/useUploads';
 import { useProfile } from '../../hooks/useProfile';
 import { Button } from '../ui';
-
-const formatBytes = (bytes: number): string => {
-  if (bytes === 0) return '0 Bytes';
-  const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
-};
+import { formatBytes } from '../../lib/format';
 
 const formatDate = (timestamp: number): string => {
   return new Date(timestamp * 1000).toLocaleDateString('en-US', {
