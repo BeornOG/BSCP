@@ -4,6 +4,8 @@ import { useWebhooks, useCreateWebhook, useDeleteWebhook, useRegenerateWebhook }
 import { useTwoFactorSetup, useTwoFactorEnable, useTwoFactorDisable } from '../hooks/use2FA';
 import { useLogout } from '../hooks/useAuth';
 import { Avatar, Button, Input, Spinner } from '../components/ui';
+import MediaManager from '../components/settings/MediaManager';
+import StorageSettings from '../components/settings/StorageSettings';
 
 const ACCENT_COLORS = ['#6e8efb', '#ff716c', '#e9caf0', '#4d3755', '#28a745'];
 
@@ -416,6 +418,23 @@ export default function SettingsPage() {
           </div>
         )}
       </section>
+
+      {/* Media Manager Section */}
+      <section className="space-y-4">
+        <h2 className="text-sm font-medium text-[#71747a] uppercase tracking-wide">Media Storage</h2>
+        <div className="p-4 rounded-lg bg-[#141517] border border-[#232529]">
+          <MediaManager />
+        </div>
+      </section>
+
+      {/* Admin Storage Settings */}
+      {profile?.is_admin && (
+        <section className="space-y-4">
+          <div className="p-4 rounded-lg bg-[#1a1d21] border border-[#2d2e31]">
+            <StorageSettings />
+          </div>
+        </section>
+      )}
 
       {/* Actions */}
       <div className="flex items-center gap-4 pt-4 border-t border-[#232529]">

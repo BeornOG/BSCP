@@ -23,8 +23,10 @@ export interface UserProfile {
   profile_pic: string | null;
   status: string;
   is_admin: boolean;
+  is_primary_admin?: boolean;
   is_2fa_enabled: boolean;
   bio?: string;
+  storage_limit_mb?: number;
 }
 
 export interface Invite {

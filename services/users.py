@@ -12,8 +12,10 @@ def serialize_profile(user, domain):
         "profile_pic": user.profile_pic or None,
         "status": get_user_status(user),
         "is_admin": user.is_admin,
+        "is_primary_admin": user.is_primary_admin,
         "is_2fa_enabled": user.is_2fa_enabled,
         "bio": user.bio or None,
+        "storage_limit_mb": user.storage_limit_mb,
     }
 
 
