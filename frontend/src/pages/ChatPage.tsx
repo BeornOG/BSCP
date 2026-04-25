@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useChats } from '../hooks/useChats';
-import { useMessages, useSendMessage, useUploadFile } from '../hooks/useMessages';
+import { useMessages, useSendMessage, useUploadFile, useDeleteMessage } from '../hooks/useMessages';
 import { useProfile } from '../hooks/useProfile';
 import { setActiveChatId as notifyActiveChatId } from '../hooks/useNotifications';
 import ChatSidebar from '../components/chat/ChatSidebar';
@@ -24,6 +24,7 @@ export default function ChatPage() {
   const { data: chats, isLoading: chatsLoading } = useChats();
   const { data: serverMessages, isLoading: messagesLoading } = useMessages(activeChatId);
   const sendMessage = useSendMessage();
+  const deleteMessage = useDeleteMessage(activeChatId);
   const { data: profile } = useProfile();
 
   const messages = useMemo(() => {
@@ -91,6 +92,10 @@ export default function ChatPage() {
     });
   };
 
+  const handleDeleteMessage = (messageId: string) => {
+    deleteMessage.mutate(messageId);
+  };
+
   const handleOpenProfile = async (userId: string) => {
     setProfileModal({ open: true, userId });
     setProfileLoading(true);
@@ -143,6 +148,7 @@ export default function ChatPage() {
               isLoading={messagesLoading}
               onImageClick={(src) => setModalImage(src)}
               onAvatarClick={handleOpenProfile}
+              onDeleteMessage={handleDeleteMessage}
             />
 
             <MessageInput

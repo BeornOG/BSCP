@@ -72,3 +72,14 @@ export function useUploadFile() {
     mutationFn: (file: File) => apiUpload<{ markdown: string; url: string }>('/api/upload/', file),
   });
 }
+
+export function useDeleteMessage(chatId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (messageId: string) =>
+      api(`/api/chats/${encodeURIComponent(chatId!)}/messages/${encodeURIComponent(messageId)}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
+    },
+  });
+}

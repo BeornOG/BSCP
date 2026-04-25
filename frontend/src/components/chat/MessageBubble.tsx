@@ -16,6 +16,7 @@ interface MessageBubbleProps {
   profilePic?: string;
   displayName?: string;
   onAvatarClick?: (sender: string) => void;
+  onDelete?: (messageId: string) => void;
 }
 
 /** Convert bare image/video URLs into markdown/HTML */
@@ -71,6 +72,7 @@ const MessageBubble: FC<MessageBubbleProps> = ({
   profilePic,
   displayName,
   onAvatarClick,
+  onDelete,
 }) => {
   const renderedHtml = renderMarkdown(message.text);
 
@@ -108,14 +110,25 @@ const MessageBubble: FC<MessageBubbleProps> = ({
       <div className={`flex max-w-[70%] flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
         <span className="mb-1 text-xs text-[#71747a]">{senderName}</span>
 
-        <div
-          className={`msg-content rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-            isOwn
-              ? 'rounded-tr-sm bg-[var(--accent)] text-white'
-              : 'rounded-tl-sm bg-[#1a1d21] text-[#e8eaed]'
-          }`}
-          dangerouslySetInnerHTML={{ __html: renderedHtml }}
-        />
+        <div className="group relative">
+          <div
+            className={`msg-content rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+              isOwn
+                ? 'rounded-tr-sm bg-[var(--accent)] text-white'
+                : 'rounded-tl-sm bg-[#1a1d21] text-[#e8eaed]'
+            }`}
+            dangerouslySetInnerHTML={{ __html: renderedHtml }}
+          />
+          {isOwn && !isPending && !isFailed && onDelete && (
+            <button
+              onClick={() => onDelete(message.id)}
+              className="absolute -right-8 top-0.5 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:text-red-400 text-[#71747a]"
+              title="Delete message"
+            >
+              <span className="material-symbols-outlined text-[18px]">delete</span>
+            </button>
+          )}
+        </div>
 
         <span
           className={`mt-1 text-xs ${

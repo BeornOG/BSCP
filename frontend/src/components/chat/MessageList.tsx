@@ -10,6 +10,7 @@ interface MessageListProps {
   isLoading: boolean;
   onImageClick: (src: string) => void;
   onAvatarClick?: (userId: string) => void;
+  onDeleteMessage?: (messageId: string) => void;
 }
 
 const MessageList: FC<MessageListProps> = ({
@@ -19,6 +20,7 @@ const MessageList: FC<MessageListProps> = ({
   isLoading,
   onImageClick,
   onAvatarClick,
+  onDeleteMessage,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -173,6 +175,7 @@ const MessageList: FC<MessageListProps> = ({
               profilePic={profilePics[msg.sender] || undefined}
               displayName={displayNames[msg.sender]}
               onAvatarClick={onAvatarClick}
+              onDelete={onDeleteMessage}
             />
           </div>
         );

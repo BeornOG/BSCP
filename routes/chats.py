@@ -224,6 +224,29 @@ class ChatMessagesResource(MethodView):
         return _serialize_message(new_msg)
 
 
+# ── /<target>/messages/<message_id> ─────────────────────────────────────
+
+@chats_blp.route("/<path:target>/messages/<path:message_id>", methods=["DELETE"])
+class ChatMessageDetailResource(MethodView):
+    @chats_blp.response(204)
+    def delete(self, target, message_id):
+        """Delete a message (owner only)"""
+        require_auth()
+        from app import Message, DOMAIN
+        db = current_app.extensions['sqlalchemy']
+        me = f"{request.user.username}@{DOMAIN}"
+
+        msg = db.session.query(Message).filter_by(id=message_id).first()
+        if not msg:
+            abort(404, message="Message not found")
+        if msg.sender != me:
+            abort(403, message="Cannot delete other user's messages")
+
+        db.session.delete(msg)
+        db.session.commit()
+        return None
+
+
 def _serialize_message(msg):
     """Convert a Message model to a response dict."""
     return {
