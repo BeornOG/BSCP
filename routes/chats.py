@@ -154,6 +154,11 @@ class ChatMessagesResource(MethodView):
         receiver = f"{target}@{DOMAIN}" if "@" not in target else target
         sender = f"{request.user.username}@{DOMAIN}"
 
+        # Block sending to webhooks (one-way only)
+        username = receiver.split("@")[0]
+        if username.startswith("webhook-"):
+            abort(403, message="Cannot send messages to webhooks")
+
         # Verify the recipient exists before saving
         if "#" not in target:
             try:
