@@ -22,6 +22,7 @@ export default function SettingsPage() {
   const twoFactorDisable = useTwoFactorDisable();
 
   const [displayName, setDisplayName] = useState('');
+  const [bio, setBio] = useState('');
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const [accentColor, setAccentColor] = useState(() => localStorage.getItem('accent_color') || '#6e8efb');
   const [enableChime, setEnableChime] = useState(() => localStorage.getItem('notif_chime') !== 'false');
@@ -42,6 +43,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (profile) {
       setDisplayName(profile.display_name);
+      setBio(profile.bio || '');
     }
   }, [profile]);
 
@@ -65,7 +67,7 @@ export default function SettingsPage() {
   }, [enableDesktopNotif]);
 
   const handleSave = () => {
-    updateProfile.mutate({ display_name: displayName });
+    updateProfile.mutate({ display_name: displayName, bio: bio || undefined });
   };
 
   const handlePicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -167,6 +169,13 @@ export default function SettingsPage() {
               placeholder="Display name"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
+            />
+            <textarea
+              placeholder="Bio"
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              rows={3}
+              className="w-full px-3 py-2 rounded border border-[#232529] bg-[#0a0a0b] text-sm text-[#e8eaed] placeholder-[#71747a] outline-none focus:border-[var(--accent)]"
             />
             {profile?.profile_pic && (
               <button

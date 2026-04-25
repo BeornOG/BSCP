@@ -24,6 +24,7 @@ export interface UserProfile {
   status: string;
   is_admin: boolean;
   is_2fa_enabled: boolean;
+  bio?: string;
 }
 
 export interface Invite {

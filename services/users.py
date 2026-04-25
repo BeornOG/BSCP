@@ -13,6 +13,7 @@ def serialize_profile(user, domain):
         "status": get_user_status(user),
         "is_admin": user.is_admin,
         "is_2fa_enabled": user.is_2fa_enabled,
+        "bio": user.bio or None,
     }
 
 

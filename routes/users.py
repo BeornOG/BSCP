@@ -45,6 +45,8 @@ class CurrentUserResource(MethodView):
 
         if "display_name" in data:
             user.display_name = data["display_name"]
+        if "bio" in data:
+            user.bio = data["bio"]
 
         db.session.commit()
         return serialize_profile(user, DOMAIN)

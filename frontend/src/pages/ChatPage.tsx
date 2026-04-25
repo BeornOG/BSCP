@@ -6,8 +6,10 @@ import { setActiveChatId as notifyActiveChatId } from '../hooks/useNotifications
 import ChatSidebar from '../components/chat/ChatSidebar';
 import MessageList from '../components/chat/MessageList';
 import MessageInput from '../components/chat/MessageInput';
-import { Avatar, Modal } from '../components/ui';
+import { Avatar, Modal, ProfileModal } from '../components/ui';
 import type { UserStatus } from '../components/ui/Avatar';
+import { api } from '../lib/api';
+import type { UserProfile } from '../types';
 
 export default function ChatPage() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -15,6 +17,9 @@ export default function ChatPage() {
   const [activeChatPic, setActiveChatPic] = useState<string | null>(null);
   const [activeChatStatus, setActiveChatStatus] = useState<UserStatus>('offline');
   const [modalImage, setModalImage] = useState<string | null>(null);
+  const [profileModal, setProfileModal] = useState<{ open: boolean; userId: string | null }>({ open: false, userId: null });
+  const [profileData, setProfileData] = useState<UserProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
 
   const { data: chats, isLoading: chatsLoading } = useChats();
   const { data: serverMessages, isLoading: messagesLoading } = useMessages(activeChatId);
@@ -86,6 +91,19 @@ export default function ChatPage() {
     });
   };
 
+  const handleOpenProfile = async (userId: string) => {
+    setProfileModal({ open: true, userId });
+    setProfileLoading(true);
+    try {
+      const data = await api<UserProfile>(`/api/users/${userId}`);
+      setProfileData(data);
+    } catch (error) {
+      console.error('Failed to fetch profile:', error);
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
   return (
     <div className="flex h-full">
       <ChatSidebar
@@ -104,7 +122,12 @@ export default function ChatPage() {
         ) : (
           <>
             <div className="flex items-center gap-3 px-6 py-4 border-b border-[#232529]">
-              <Avatar src={activeChatPic} name={activeChatName} size="sm" status={activeChatStatus} />
+              <div
+                onClick={() => activeChatId && handleOpenProfile(activeChatId)}
+                className="cursor-pointer hover:opacity-80 transition-opacity"
+              >
+                <Avatar src={activeChatPic} name={activeChatName} size="sm" status={activeChatStatus} />
+              </div>
               <div className="min-w-0">
                 <h2 className="text-[#e8eaed] font-medium truncate">{activeChatName}</h2>
                 {activeChatId !== activeChatName && (
@@ -119,6 +142,7 @@ export default function ChatPage() {
               currentUser={profile?.username || ''}
               isLoading={messagesLoading}
               onImageClick={(src) => setModalImage(src)}
+              onAvatarClick={handleOpenProfile}
             />
 
             <MessageInput
@@ -136,6 +160,13 @@ export default function ChatPage() {
           <img src={modalImage} alt="Preview" className="max-w-full max-h-[80vh] rounded-lg" />
         </Modal>
       )}
+
+      <ProfileModal
+        isOpen={profileModal.open}
+        onClose={() => setProfileModal({ open: false, userId: null })}
+        profile={profileData || undefined}
+        isLoading={profileLoading}
+      />
     </div>
   );
 }
