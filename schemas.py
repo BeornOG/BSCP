@@ -60,6 +60,7 @@ class UserProfile(Schema):
     is_admin = fields.Boolean(dump_only=True, metadata={"description": "Whether user is an admin on the local server"})
     is_primary_admin = fields.Boolean(dump_only=True, metadata={"description": "Whether user is the primary/initial admin"})
     is_2fa_enabled = fields.Boolean(dump_only=True, metadata={"description": "Whether 2FA is enabled"})
+    bio = fields.String(allow_none=True, metadata={"description": "User bio/about"})
 
 
 class PushSubscriptionKeys(Schema):
@@ -79,7 +80,8 @@ class VapidPublicKeyResponse(Schema):
 class UserSettingsUpdate(Schema):
     """Request body for updating user settings."""
     display_name = fields.String(metadata={"description": "New display name"})
-    bio = fields.String(allow_none=True, metadata={"description": "User bio"})
+    bio = fields.String(allow_none=True, metadata={"description": "User bio/about"})
+
 
 
 class ProfilePicResponse(Schema):

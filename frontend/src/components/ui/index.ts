@@ -5,3 +5,4 @@ export { Card, CardHeader, CardContent } from './Card';
 export { default as Modal } from './Modal';
 export { default as Spinner } from './Spinner';
 export { default as Badge } from './Badge';
+export { ProfileModal } from './ProfileModal';

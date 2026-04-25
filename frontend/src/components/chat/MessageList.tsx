@@ -9,6 +9,7 @@ interface MessageListProps {
   currentUser: string;
   isLoading: boolean;
   onImageClick: (src: string) => void;
+  onAvatarClick?: (userId: string) => void;
 }
 
 const MessageList: FC<MessageListProps> = ({
@@ -17,6 +18,7 @@ const MessageList: FC<MessageListProps> = ({
   currentUser,
   isLoading,
   onImageClick,
+  onAvatarClick,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -170,6 +172,7 @@ const MessageList: FC<MessageListProps> = ({
               isFailed={isFailed}
               profilePic={profilePics[msg.sender] || undefined}
               displayName={displayNames[msg.sender]}
+              onAvatarClick={onAvatarClick}
             />
           </div>
         );
