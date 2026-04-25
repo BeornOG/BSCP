@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useProfile, useUpdateProfile, useUploadProfilePic, useDeleteProfilePic } from '../hooks/useProfile';
 import { useWebhooks, useCreateWebhook, useDeleteWebhook, useRegenerateWebhook } from '../hooks/useWebhooks';
+import { useTwoFactorSetup, useTwoFactorEnable, useTwoFactorDisable } from '../hooks/use2FA';
 import { useLogout } from '../hooks/useAuth';
 import { Avatar, Button, Input, Spinner } from '../components/ui';
 
@@ -16,6 +17,9 @@ export default function SettingsPage() {
   const createWebhook = useCreateWebhook();
   const deleteWebhook = useDeleteWebhook();
   const regenerateWebhook = useRegenerateWebhook();
+  const twoFactorSetup = useTwoFactorSetup();
+  const twoFactorEnable = useTwoFactorEnable();
+  const twoFactorDisable = useTwoFactorDisable();
 
   const [displayName, setDisplayName] = useState('');
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
@@ -26,6 +30,13 @@ export default function SettingsPage() {
   const [webhookName, setWebhookName] = useState('');
   const [webhookAvatarUrl, setWebhookAvatarUrl] = useState('');
   const [copiedWebhookId, setCopiedWebhookId] = useState<string | null>(null);
+  const [show2FADialog, setShow2FADialog] = useState(false);
+  const [show2FAVerify, setShow2FAVerify] = useState(false);
+  const [show2FADisable, setShow2FADisable] = useState(false);
+  const [twoFAQRCode, setTwoFAQRCode] = useState('');
+  const [twoFASecret, setTwoFASecret] = useState('');
+  const [twoFACode, setTwoFACode] = useState('');
+  const [disablePassword, setDisablePassword] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -82,6 +93,45 @@ export default function SettingsPage() {
     setTimeout(() => setCopiedWebhookId(null), 2000);
   };
 
+  const handleStartTwoFASetup = () => {
+    twoFactorSetup.mutate(undefined, {
+      onSuccess: (data) => {
+        setTwoFAQRCode(data.qr_code);
+        setTwoFASecret(data.secret);
+        setShow2FADialog(true);
+        setShow2FAVerify(false);
+        setTwoFACode('');
+      },
+    });
+  };
+
+  const handleVerifyTwoFA = async () => {
+    if (!twoFACode.trim() || twoFACode.length !== 6) return;
+    twoFactorEnable.mutate(twoFACode, {
+      onSuccess: async (response: any) => {
+        if (response.success) {
+          // Wait for profile to refetch before closing dialog
+          await new Promise(resolve => setTimeout(resolve, 500));
+          setShow2FADialog(false);
+          setShow2FAVerify(false);
+          setTwoFACode('');
+          setTwoFASecret('');
+          setTwoFAQRCode('');
+        }
+      },
+    });
+  };
+
+  const handleDisableTwoFA = () => {
+    if (!disablePassword.trim()) return;
+    twoFactorDisable.mutate(disablePassword, {
+      onSuccess: () => {
+        setShow2FADisable(false);
+        setDisablePassword('');
+      },
+    });
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -91,7 +141,8 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-10 space-y-10">
+    <div className="h-full overflow-y-auto">
+      <div className="max-w-2xl mx-auto px-6 py-10 space-y-10">
       <h1 className="text-2xl font-semibold text-[#e8eaed]">Settings</h1>
 
       {/* Profile Section */}
@@ -197,6 +248,68 @@ export default function SettingsPage() {
             <span className="text-sm text-[#e8eaed]">Message chime sound</span>
           </label>
         </div>
+      </section>
+
+      {/* Security Section */}
+      <section className="space-y-4">
+        <h2 className="text-sm font-medium text-[#71747a] uppercase tracking-wide">Security</h2>
+        <div className="p-4 rounded-lg bg-[#141517] border border-[#232529] space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <h3 className="text-sm font-medium text-[#e8eaed]">Two-Factor Authentication</h3>
+              <p className="text-xs text-[#71747a]">
+                {profile?.is_2fa_enabled ? 'Enabled' : 'Add an extra layer of security to your account'}
+              </p>
+            </div>
+            {profile?.is_2fa_enabled ? (
+              <Button
+                onClick={() => setShow2FADisable(true)}
+                className="text-xs px-3 py-1.5 bg-red-600/20 text-red-400 hover:bg-red-600/30 border border-red-600/50"
+              >
+                Disable
+              </Button>
+            ) : (
+              <Button
+                onClick={handleStartTwoFASetup}
+                disabled={twoFactorSetup.isPending}
+                className="text-xs px-3 py-1.5 bg-[var(--accent)] text-black hover:bg-[var(--accent)]/90"
+              >
+                {twoFactorSetup.isPending ? 'Loading...' : 'Enable'}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {show2FADisable && (
+          <div className="p-4 rounded-lg bg-red-600/10 border border-red-600/30 space-y-3">
+            <p className="text-sm text-red-300">Enter your password to disable 2FA</p>
+            <Input
+              type="password"
+              placeholder="Password"
+              value={disablePassword}
+              onChange={(e) => setDisablePassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleDisableTwoFA()}
+            />
+            <div className="flex gap-2 justify-end">
+              <Button
+                onClick={() => {
+                  setShow2FADisable(false);
+                  setDisablePassword('');
+                }}
+                className="text-xs bg-transparent border border-[#232529] text-[#e8eaed] hover:bg-[#141517]"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleDisableTwoFA}
+                disabled={twoFactorDisable.isPending || !disablePassword.trim()}
+                className="text-xs bg-red-600 text-white hover:bg-red-700"
+              >
+                {twoFactorDisable.isPending ? 'Disabling...' : 'Disable 2FA'}
+              </Button>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Webhooks Section */}
@@ -306,6 +419,86 @@ export default function SettingsPage() {
         >
           Log out
         </Button>
+      </div>
+
+      {/* 2FA Setup Modal */}
+      {show2FADialog && !show2FAVerify && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-[#141517] rounded-lg border border-[#232529] p-6 max-w-sm w-full mx-4 space-y-4">
+            <h3 className="text-lg font-semibold text-[#e8eaed]">Set up Two-Factor Authentication</h3>
+            <p className="text-sm text-[#71747a]">Scan this QR code with your authenticator app:</p>
+            {twoFAQRCode && (
+              <div className="flex justify-center bg-white p-4 rounded">
+                <img src={`data:image/png;base64,${twoFAQRCode}`} alt="2FA QR Code" className="w-48 h-48" />
+              </div>
+            )}
+            <div className="space-y-2">
+              <p className="text-xs text-[#71747a]">Or enter this code manually:</p>
+              <div className="p-3 rounded bg-[#0a0a0b] border border-[#232529] font-mono text-sm text-[#e8eaed] break-all">
+                {twoFASecret}
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end pt-2">
+              <Button
+                onClick={() => {
+                  setShow2FADialog(false);
+                  setTwoFAQRCode('');
+                  setTwoFASecret('');
+                }}
+                className="bg-transparent border border-[#232529] text-[#e8eaed] hover:bg-[#141517]"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => setShow2FAVerify(true)}
+                className="bg-[var(--accent)] text-black hover:bg-[var(--accent)]/90"
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2FA Verify Modal */}
+      {show2FADialog && show2FAVerify && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-[#141517] rounded-lg border border-[#232529] p-6 max-w-sm w-full mx-4 space-y-4">
+            <h3 className="text-lg font-semibold text-[#e8eaed]">Verify Your Code</h3>
+            <p className="text-sm text-[#71747a]">Enter the 6-digit code from your authenticator app:</p>
+            <Input
+              maxLength={6}
+              placeholder="000000"
+              value={twoFACode}
+              onChange={(e) => setTwoFACode(e.target.value.replace(/[^0-9]/g, ''))}
+              onKeyDown={(e) => e.key === 'Enter' && twoFACode.length === 6 && handleVerifyTwoFA()}
+              className="text-center text-xl tracking-widest"
+            />
+            {twoFactorEnable.isError && (
+              <p className="text-sm text-red-400">Invalid code. Please try again.</p>
+            )}
+            <div className="flex gap-3 justify-end">
+              <Button
+                onClick={() => {
+                  setShow2FADialog(false);
+                  setShow2FAVerify(false);
+                  setTwoFACode('');
+                }}
+                className="bg-transparent border border-[#232529] text-[#e8eaed] hover:bg-[#141517]"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleVerifyTwoFA}
+                disabled={twoFactorEnable.isPending || twoFACode.length !== 6}
+                className="bg-[var(--accent)] text-black hover:bg-[var(--accent)]/90"
+              >
+                {twoFactorEnable.isPending ? 'Verifying...' : 'Verify'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );
