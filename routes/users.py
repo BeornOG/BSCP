@@ -12,6 +12,8 @@ from schemas import (
     ProfilePicResponse,
     PushSubscriptionRequest,
     VapidPublicKeyResponse,
+    TwoFactorEnableRequest,
+    TwoFactorDisableRequest,
 )
 from routes import require_auth, require_admin
 from services.users import get_profile, serialize_profile
@@ -242,3 +244,124 @@ class UserListResource(MethodView):
         db = current_app.extensions['sqlalchemy']
         users = db.session.query(User).all()
         return [serialize_profile(u, DOMAIN) for u in users]
+
+
+# ── /me/2fa ───────────────────────────────────────────────────────────────
+
+@users_blp.route("/me/2fa")
+class TwoFactorSettingsResource(MethodView):
+    @users_blp.response(200, UserProfile)
+    def get(self):
+        """Get 2FA status for authenticated user"""
+        require_auth()
+        from app import DOMAIN
+        return serialize_profile(request.user, DOMAIN)
+
+
+@users_blp.route("/me/2fa/setup")
+class TwoFactorSetupResource(MethodView):
+    @users_blp.response(200)
+    def post(self):
+        """Initiate 2FA setup — returns secret and QR code"""
+        require_auth()
+        import pyotp
+        from schemas import TwoFactorSetupResponse
+
+        # Generate new secret for setup
+        secret = pyotp.random_base32()
+        totp = pyotp.TOTP(secret)
+
+        # Store temporary secret in session for verification
+        session['pending_2fa_secret'] = secret
+
+        # Generate QR code
+        provisioning_uri = totp.provisioning_uri(
+            name=request.user.username,
+            issuer_name='BSCP'
+        )
+
+        # Convert to QR code image (base64)
+        try:
+            import qrcode
+            qr = qrcode.QRCode(version=1, box_size=10, border=5)
+            qr.add_data(provisioning_uri)
+            qr.make(fit=True)
+            img = qr.make_image()
+
+            # Convert to base64
+            import io, base64
+            img_io = io.BytesIO()
+            img.save(img_io, format='PNG')
+            img_io.seek(0)
+            qr_code_b64 = base64.b64encode(img_io.getvalue()).decode()
+        except ImportError:
+            # Fallback if qrcode not available
+            qr_code_b64 = ""
+
+        return {
+            "secret": secret,
+            "qr_code": qr_code_b64,
+            "provisioning_uri": provisioning_uri
+        }
+
+
+@users_blp.route("/me/2fa/enable")
+class TwoFactorEnableResource(MethodView):
+    @users_blp.arguments(TwoFactorEnableRequest)
+    @users_blp.response(200)
+    def post(self, data):
+        """Enable 2FA after verifying OTP code"""
+        require_auth()
+        import pyotp
+
+        db = current_app.extensions['sqlalchemy']
+
+        # Check if already enabled
+        if request.user.is_2fa_enabled:
+            abort(400, message="2FA is already enabled")
+
+        # Get the temporary secret from session (set during setup)
+        temp_secret = session.get('pending_2fa_secret')
+        if not temp_secret:
+            abort(400, message="2FA setup not initiated. Start setup first.")
+
+        # Verify OTP code against the temporary secret
+        totp = pyotp.TOTP(temp_secret)
+        if not totp.verify(data["otp"]):
+            return {"success": False, "error": "Invalid verification code"}
+
+        # Save the temporary secret as the user's OTP secret
+        request.user.otp_secret = temp_secret
+        request.user.is_2fa_enabled = True
+        db.session.commit()
+
+        # Clear the temporary secret from session
+        session.pop('pending_2fa_secret', None)
+
+        return {"success": True, "message": "2FA enabled successfully"}
+
+
+@users_blp.route("/me/2fa/disable")
+class TwoFactorDisableResource(MethodView):
+    @users_blp.arguments(TwoFactorDisableRequest)
+    @users_blp.response(200)
+    def post(self, data):
+        """Disable 2FA (requires password verification)"""
+        require_auth()
+        from werkzeug.security import check_password_hash
+
+        db = current_app.extensions['sqlalchemy']
+
+        # Verify password
+        if not check_password_hash(request.user.password_hash, data["password"]):
+            abort(403, message="Invalid password")
+
+        # Check if 2FA is enabled
+        if not request.user.is_2fa_enabled:
+            abort(400, message="2FA is not enabled")
+
+        # Disable 2FA
+        request.user.is_2fa_enabled = False
+        db.session.commit()
+
+        return {"success": True, "message": "2FA disabled successfully"}

@@ -58,6 +58,7 @@ class UserProfile(Schema):
     profile_pic = fields.String(allow_none=True, metadata={"description": "Profile picture URL"})
     status = fields.String(metadata={"description": "User status: online, offline, away, or dnd"})
     is_admin = fields.Boolean(dump_only=True, metadata={"description": "Whether user is an admin on the local server"})
+    is_2fa_enabled = fields.Boolean(dump_only=True, metadata={"description": "Whether 2FA is enabled"})
 
 
 class PushSubscriptionKeys(Schema):
@@ -136,6 +137,22 @@ class AuthErrorResponse(Schema):
 class SetupStatusResponse(Schema):
     """Whether initial setup is needed."""
     needs_setup = fields.Boolean(metadata={"description": "True if no admin account exists yet"})
+
+
+class TwoFactorSetupResponse(Schema):
+    """Response containing 2FA setup information."""
+    secret = fields.String(metadata={"description": "Base32 encoded secret for TOTP"})
+    qr_code = fields.String(metadata={"description": "QR code as base64 PNG image"})
+
+
+class TwoFactorEnableRequest(Schema):
+    """Request to enable 2FA after verification."""
+    otp = fields.String(required=True, metadata={"description": "6-digit OTP code to verify setup"})
+
+
+class TwoFactorDisableRequest(Schema):
+    """Request to disable 2FA."""
+    password = fields.String(required=True, metadata={"description": "User password for verification"})
 
 
 # ---------------------------------------------------------------------------
