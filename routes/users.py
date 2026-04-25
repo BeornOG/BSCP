@@ -175,9 +175,26 @@ class ProfilePictureResource(MethodView):
 class UserProfileResource(MethodView):
     @users_blp.response(200, UserProfile)
     def get(self, full_id):
-        """Get a user's profile by username@domain (federation-aware)"""
+        """Get a user's profile by username@domain (federation-aware, webhook-aware)"""
         if "@" not in full_id:
             abort(400, message="Invalid format. Use username@domain")
+
+        from app import DOMAIN, Webhook
+        db = current_app.extensions['sqlalchemy']
+        username, domain = full_id.rsplit("@", 1)
+
+        # Check if it's a webhook sender on the local domain
+        if domain == DOMAIN and username.startswith("webhook-"):
+            webhook_id = username[8:]  # Remove "webhook-" prefix
+            webhook = db.session.query(Webhook).filter_by(id=webhook_id).first()
+            if webhook:
+                return {
+                    "username": full_id,
+                    "display_name": webhook.name,
+                    "profile_pic": webhook.profile_pic,
+                    "status": "offline",
+                    "is_admin": False,
+                }
 
         try:
             profile = get_profile(full_id)

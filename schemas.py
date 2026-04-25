@@ -166,6 +166,38 @@ class UploadResponse(Schema):
 
 
 # ---------------------------------------------------------------------------
+# Webhook Schemas
+# ---------------------------------------------------------------------------
+
+class WebhookObject(Schema):
+    """Webhook representation."""
+    id = fields.String(dump_only=True, metadata={"description": "Webhook ID"})
+    name = fields.String(metadata={"description": "Webhook name"})
+    url = fields.String(dump_only=True, metadata={"description": "Full webhook URL for posting"})
+    profile_pic = fields.String(allow_none=True, metadata={"description": "Avatar URL for webhook messages"})
+    created_at = fields.Float(dump_only=True, metadata={"description": "Creation timestamp"})
+    last_used = fields.Float(dump_only=True, allow_none=True, metadata={"description": "Last usage timestamp"})
+
+
+class WebhookCreateRequest(Schema):
+    """Request to create a webhook."""
+    name = fields.String(required=True, metadata={"description": "Webhook name"})
+    avatar_url = fields.String(load_default=None, metadata={"description": "Avatar URL for webhook messages"})
+
+
+class WebhookRegenerateResponse(Schema):
+    """Response after regenerating webhook token."""
+    url = fields.String(metadata={"description": "New full webhook URL"})
+
+
+class WebhookPayload(Schema):
+    """Incoming webhook payload."""
+    content = fields.String(required=True, metadata={"description": "Message content"})
+    username = fields.String(load_default=None, metadata={"description": "Override sender display name"})
+    avatar_url = fields.String(load_default=None, metadata={"description": "Override sender avatar URL"})
+
+
+# ---------------------------------------------------------------------------
 # Admin Schemas
 # ---------------------------------------------------------------------------
 

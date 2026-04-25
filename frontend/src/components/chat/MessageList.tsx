@@ -24,6 +24,7 @@ const MessageList: FC<MessageListProps> = ({
   const shouldAutoScroll = useRef(true);
   const prevMessageCount = useRef(0);
   const [profilePics, setProfilePics] = useState<Record<string, string>>({});
+  const [displayNames, setDisplayNames] = useState<Record<string, string>>({});
   const fetchedSenders = useRef<Set<string>>(new Set());
   const [hasDoneInitialScroll, setHasDoneInitialScroll] = useState(false);
   const [hideUnreadBoundary, setHideUnreadBoundary] = useState(false);
@@ -56,6 +57,9 @@ const MessageList: FC<MessageListProps> = ({
         .then((data) => {
           if (data?.profile_pic) {
             setProfilePics((prev) => ({ ...prev, [sender]: data.profile_pic }));
+          }
+          if (data?.display_name) {
+            setDisplayNames((prev) => ({ ...prev, [sender]: data.display_name }));
           }
         })
         .catch(() => {});
@@ -165,6 +169,7 @@ const MessageList: FC<MessageListProps> = ({
               isPending={isPending}
               isFailed={isFailed}
               profilePic={profilePics[msg.sender] || undefined}
+              displayName={displayNames[msg.sender]}
             />
           </div>
         );

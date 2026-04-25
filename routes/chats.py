@@ -23,7 +23,7 @@ class ChatListResource(MethodView):
     def get(self):
         """List all conversations for the authenticated user"""
         require_auth()
-        from app import Message, DOMAIN
+        from app import Message, DOMAIN, Webhook
         db = current_app.extensions['sqlalchemy']
         me = f"{request.user.username}@{DOMAIN}"
 
@@ -36,19 +36,28 @@ class ChatListResource(MethodView):
         chats = []
 
         for partner in sorted(partners):
-            try:
-                profile = get_profile(partner)
-            except ConnectionError:
-                profile = None
+            display_name = partner.split("@")[0]
+            profile_pic = None
+            status = "offline"
 
-            if profile:
-                display_name = profile["display_name"]
-                profile_pic = profile["profile_pic"]
-                status = profile["status"]
+            webhook = None
+            if partner.endswith(f"@{DOMAIN}") and partner.startswith("webhook-"):
+                webhook_id = partner.split("@")[0][8:]  # Remove "webhook-" prefix
+                webhook = db.session.query(Webhook).filter_by(id=webhook_id, user_id=request.user.id).first()
+
+            if webhook:
+                display_name = webhook.name
+                profile_pic = webhook.profile_pic
             else:
-                display_name = partner.split("@")[0]
-                profile_pic = None
-                status = "offline"
+                try:
+                    profile = get_profile(partner)
+                except ConnectionError:
+                    profile = None
+
+                if profile:
+                    display_name = profile["display_name"]
+                    profile_pic = profile["profile_pic"]
+                    status = profile["status"]
 
             unread_count = db.session.query(Message).filter(
                 Message.sender == partner,
@@ -144,6 +153,11 @@ class ChatMessagesResource(MethodView):
 
         receiver = f"{target}@{DOMAIN}" if "@" not in target else target
         sender = f"{request.user.username}@{DOMAIN}"
+
+        # Block sending to webhooks (one-way only)
+        username = receiver.split("@")[0]
+        if username.startswith("webhook-"):
+            abort(403, message="Cannot send messages to webhooks")
 
         # Verify the recipient exists before saving
         if "#" not in target:

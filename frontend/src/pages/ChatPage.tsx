@@ -124,7 +124,8 @@ export default function ChatPage() {
             <MessageInput
               onSend={handleSend}
               onFileUpload={handleFileUpload}
-              disabled={uploadFile.isPending}
+              disabled={uploadFile.isPending || activeChatId?.startsWith('webhook-')}
+              isWebhook={activeChatId?.startsWith('webhook-')}
             />
           </>
         )}
