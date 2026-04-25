@@ -64,6 +64,7 @@ class SetupResource(MethodView):
             password_hash=generate_password_hash(password),
             email=email,
             is_admin=True,
+            is_primary_admin=True,
             otp_secret=pyotp.random_base32(),
             is_2fa_enabled=False,
         )

@@ -58,6 +58,7 @@ class UserProfile(Schema):
     profile_pic = fields.String(allow_none=True, metadata={"description": "Profile picture URL"})
     status = fields.String(metadata={"description": "User status: online, offline, away, or dnd"})
     is_admin = fields.Boolean(dump_only=True, metadata={"description": "Whether user is an admin on the local server"})
+    is_primary_admin = fields.Boolean(dump_only=True, metadata={"description": "Whether user is the primary/initial admin"})
     is_2fa_enabled = fields.Boolean(dump_only=True, metadata={"description": "Whether 2FA is enabled"})
 
 
@@ -78,6 +79,7 @@ class VapidPublicKeyResponse(Schema):
 class UserSettingsUpdate(Schema):
     """Request body for updating user settings."""
     display_name = fields.String(metadata={"description": "New display name"})
+    bio = fields.String(allow_none=True, metadata={"description": "User bio"})
 
 
 class ProfilePicResponse(Schema):
@@ -215,6 +217,35 @@ class WebhookPayload(Schema):
 
 
 # ---------------------------------------------------------------------------
+# Upload Management Schemas
+# ---------------------------------------------------------------------------
+
+class UploadObject(Schema):
+    """User's uploaded file."""
+    id = fields.String(dump_only=True, metadata={"description": "Upload ID"})
+    filename = fields.String(metadata={"description": "Original filename"})
+    mimetype = fields.String(metadata={"description": "MIME type"})
+    size_bytes = fields.Integer(metadata={"description": "File size in bytes"})
+    created_at = fields.Float(dump_only=True, metadata={"description": "Upload timestamp"})
+
+
+class UserUploadsResponse(Schema):
+    """User's uploads list."""
+    uploads = fields.List(fields.Nested(UploadObject), metadata={"description": "List of user uploads"})
+    total_size_bytes = fields.Integer(metadata={"description": "Total storage used in bytes"})
+    limit_bytes = fields.Integer(metadata={"description": "Storage limit in bytes"})
+
+
+# ---------------------------------------------------------------------------
 # Admin Schemas
 # ---------------------------------------------------------------------------
+
+class ServerConfigUpdate(Schema):
+    """Request to update server configuration."""
+    storage_limit_mb = fields.Integer(metadata={"description": "Storage limit per user in MB"})
+
+
+class ServerConfigResponse(Schema):
+    """Current server configuration."""
+    storage_limit_mb = fields.Integer(metadata={"description": "Storage limit per user in MB"})
 

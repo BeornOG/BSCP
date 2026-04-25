@@ -243,6 +243,7 @@ class User(db.Model):
     otp_secret = db.Column(db.String(32), default=pyotp.random_base32)
     is_2fa_enabled = db.Column(db.Boolean, default=False)
     is_admin = db.Column(db.Boolean, default=False)
+    is_primary_admin = db.Column(db.Boolean, default=False)
     is_deleted = db.Column(db.Boolean, default=False)
 
     # User preferences
@@ -281,8 +282,14 @@ class Upload(db.Model):
     id = db.Column(db.String(255), primary_key=True, default=lambda: str(uuid.uuid4()))
     filename = db.Column(db.String(255), nullable=False)
     mimetype = db.Column(db.String(100), nullable=False)
+    size_bytes = db.Column(db.Integer, nullable=False, default=0)
     uploaded_by = db.Column(db.String(255), db.ForeignKey('user.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.now)
+
+class ServerConfig(db.Model):
+    id = db.Column(db.Integer, primary_key=True, default=1)
+    storage_limit_mb = db.Column(db.Integer, default=500)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
 
 class InviteCode(db.Model):
     id = db.Column(db.Integer, primary_key=True)

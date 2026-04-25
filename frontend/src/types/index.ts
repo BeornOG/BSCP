@@ -23,6 +23,7 @@ export interface UserProfile {
   profile_pic: string | null;
   status: string;
   is_admin: boolean;
+  is_primary_admin?: boolean;
   is_2fa_enabled: boolean;
 }
 
