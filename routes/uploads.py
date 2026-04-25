@@ -67,7 +67,16 @@ class UploadResource(MethodView):
         db.session.commit()
 
         file_url = f"http://{DOMAIN}/uploads/{filename}"
-        markdown_url = f"![image]({file_url})"
+
+        # Use appropriate markdown based on file type
+        video_mimetypes = {'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-msvideo', 'video/x-flv', 'video/x-matroska'}
+        if mimetype in video_mimetypes:
+            # For videos, just return URL so frontend can convert to video tag
+            markdown_url = file_url
+        else:
+            # For images and other files, use image markdown syntax
+            markdown_url = f"![image]({file_url})"
+
         return {"url": file_url, "mimetype": mimetype, "markdown": markdown_url}
 
 

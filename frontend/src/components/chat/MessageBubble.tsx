@@ -3,6 +3,11 @@ import { marked } from 'marked';
 import { Avatar } from '../ui';
 import type { Message } from '../../types';
 
+// Configure marked to allow HTML
+marked.setOptions({
+  breaks: true,
+});
+
 interface MessageBubbleProps {
   message: Message;
   isOwn: boolean;
@@ -20,11 +25,25 @@ function preprocessMarkdown(text: string): string {
     /(?<!!)\b(https?:\/\/\S+\.(?:png|jpg|jpeg|gif|webp|svg))(?:\s|$)/gi,
     '![]($1) '
   );
-  // Convert bare video URLs to <video> tags
+
+  // Convert YouTube URLs to iframe embeds
   text = text.replace(
-    /\b(https?:\/\/\S+\.(?:mp4|webm|ogg))(?:\s|$)/gi,
-    '<video controls src="$1" class="max-w-full rounded-lg"></video> '
+    /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/gi,
+    '<iframe width="100%" height="315" src="https://www.youtube.com/embed/$1" frameborder="0" allowfullscreen></iframe> '
   );
+
+  // Convert Vimeo URLs to iframe embeds
+  text = text.replace(
+    /(?:https?:\/\/)?(?:www\.)?vimeo\.com\/(\d+)/gi,
+    '<iframe src="https://player.vimeo.com/video/$1" width="100%" height="315" frameborder="0" allowfullscreen></iframe> '
+  );
+
+  // Convert bare video file URLs to <video> tags (local paths, relative, or full URLs)
+  text = text.replace(
+    /\b((?:https?:)?\/\/[^\s]+\.(?:mp4|webm|ogg|mkv|avi|mov|flv|wmv)|\/[^\s]+\.(?:mp4|webm|ogg|mkv|avi|mov|flv|wmv))(?:\s|$)/gi,
+    '<video controls style="max-width: 100%; border-radius: 0.5rem; margin: 0.25rem 0;"><source src="$1"></video> '
+  );
+
   return text;
 }
 
