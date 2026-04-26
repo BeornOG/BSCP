@@ -78,18 +78,13 @@ export default function ChatPage() {
     });
   };
 
-  const handleFileUpload = (file: File) => {
-    uploadFile.mutate(file, {
-      onSuccess: (data) => {
-        if (data.markdown && activeChatId && profile) {
-          sendMessage.mutate({
-            text: data.markdown,
-            chatId: activeChatId,
-            currentUser: profile.username,
-          });
-        }
-      },
-    });
+  const handleFileUpload = async (file: File): Promise<string | null> => {
+    try {
+      const data = await uploadFile.mutateAsync(file);
+      return data.markdown || null;
+    } catch {
+      return null;
+    }
   };
 
   const handleDeleteMessage = (messageId: string) => {
@@ -154,7 +149,7 @@ export default function ChatPage() {
             <MessageInput
               onSend={handleSend}
               onFileUpload={handleFileUpload}
-              disabled={uploadFile.isPending || activeChatId?.startsWith('webhook-')}
+              disabled={activeChatId?.startsWith('webhook-')}
               isWebhook={activeChatId?.startsWith('webhook-')}
             />
           </>
