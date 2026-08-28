@@ -16,13 +16,18 @@ def load_logged_in_user():
 
     from app import UserSession
     db = current_app.extensions['sqlalchemy']
+
+    # First try Flask session (for web UI)
     token = session.get('session_token')
+
+    # If no session token, try X-Session-Token header (for embedded devices/mobile clients)
+    if not token:
+        token = request.headers.get('X-Session-Token')
+
     if not token:
         request.user = None
         return
 
-    from app import UserSession
-    db = current_app.extensions['sqlalchemy']
     try:
         user_session = db.session.query(UserSession).filter_by(token=token).first()
     except Exception:

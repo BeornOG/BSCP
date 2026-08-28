@@ -1,0 +1,36 @@
+[package]
+name = "bscp-userserver"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "bscp-userserver"
+path = "src/main.rs"
+
+[dependencies]
+bscp-common = { path = "../common" }
+axum.workspace = true
+axum-extra.workspace = true
+tokio.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+sqlx.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+reqwest.workspace = true
+mime_guess.workspace = true
+md-5.workspace = true
+base64.workspace = true
+sha2.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+utoipa.workspace = true
+utoipa-swagger-ui.workspace = true
+
+[dev-dependencies]
+tower = { workspace = true, features = ["util"] }
+http-body-util = "0.1"

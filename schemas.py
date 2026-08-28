@@ -105,6 +105,7 @@ class LoginResponse(Schema):
     success = fields.Boolean(metadata={"description": "Whether login succeeded"})
     requires_2fa = fields.Boolean(load_default=False, metadata={"description": "Whether 2FA verification is needed"})
     error = fields.String(load_default=None, metadata={"description": "Error message if login failed"})
+    session_token = fields.String(load_default=None, metadata={"description": "Session token for authenticated requests"})
 
 
 class TwoFactorRequest(Schema):
@@ -131,6 +132,7 @@ class RegisterRequest(Schema):
 class AuthSuccessResponse(Schema):
     """Generic auth success response."""
     success = fields.Boolean(metadata={"description": "Whether the operation succeeded"})
+    session_token = fields.String(load_default=None, metadata={"description": "Session token for authenticated requests"})
 
 
 class AuthErrorResponse(Schema):

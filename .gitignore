@@ -1,4 +1,5 @@
 /node-modules
+/target
 /Testing/Data
 .env
 /data/

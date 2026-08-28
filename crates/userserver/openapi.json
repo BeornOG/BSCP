@@ -1,0 +1,227 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "BSCP API",
+    "version": "1.0.0",
+    "description": "Beorn's Stupid Chat Protocol — user server API. This document is only served by debug builds."
+  },
+  "tags": [
+    { "name": "auth", "description": "Authentication & account setup" },
+    { "name": "users", "description": "Profiles, settings, push, 2FA" },
+    { "name": "chats", "description": "Conversations and messages" },
+    { "name": "uploads", "description": "File uploads & storage quota" },
+    { "name": "invites", "description": "Invite codes (admin)" },
+    { "name": "webhooks", "description": "Personal webhooks" },
+    { "name": "admin", "description": "Server configuration (admin)" },
+    { "name": "federation", "description": "Server-to-server protocol" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "sessionCookie": { "type": "apiKey", "in": "cookie", "name": "bscp_session" },
+      "sessionHeader": { "type": "apiKey", "in": "header", "name": "X-Session-Token" }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string" },
+          "errors": { "type": "array", "items": { "type": "string" } },
+          "code": { "type": "integer" }
+        }
+      },
+      "Profile": {
+        "type": "object",
+        "properties": {
+          "username": { "type": "string", "example": "alice@localhost:5000" },
+          "display_name": { "type": "string" },
+          "profile_pic": { "type": "string", "nullable": true },
+          "status": { "type": "string", "enum": ["online", "offline", "away", "dnd"] },
+          "is_admin": { "type": "boolean" },
+          "is_primary_admin": { "type": "boolean" },
+          "is_2fa_enabled": { "type": "boolean" },
+          "bio": { "type": "string", "nullable": true },
+          "storage_limit_mb": { "type": "integer" }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "sender": { "type": "string" },
+          "receiver": { "type": "string" },
+          "text": { "type": "string" },
+          "timestamp": { "type": "number" },
+          "is_read": { "type": "boolean" }
+        }
+      },
+      "Chat": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "display_name": { "type": "string" },
+          "profile_pic": { "type": "string", "nullable": true },
+          "status": { "type": "string" },
+          "unread_count": { "type": "integer" },
+          "last_message_text": { "type": "string", "nullable": true },
+          "last_message_sender": { "type": "string", "nullable": true }
+        }
+      },
+      "Invite": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "code": { "type": "string" },
+          "status": { "type": "string" },
+          "created_at": { "type": "number", "nullable": true },
+          "expires_at": { "type": "number", "nullable": true },
+          "used_by": { "type": "string", "nullable": true }
+        }
+      },
+      "Webhook": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "url": { "type": "string" },
+          "profile_pic": { "type": "string", "nullable": true },
+          "created_at": { "type": "number" },
+          "last_used": { "type": "number", "nullable": true }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/auth/setup": {
+      "get": {
+        "tags": ["auth"],
+        "summary": "Whether first-time setup is required",
+        "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "properties": { "needs_setup": { "type": "boolean" } } } } } } }
+      },
+      "post": {
+        "tags": ["auth"],
+        "summary": "Create the initial admin account",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["username", "password", "password_confirm"], "properties": { "username": { "type": "string" }, "email": { "type": "string", "nullable": true }, "password": { "type": "string" }, "password_confirm": { "type": "string" } } } } } },
+        "responses": { "201": { "description": "Created" }, "400": { "description": "Validation error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } } }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Authenticate with username & password",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["user", "password"], "properties": { "user": { "type": "string" }, "password": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "Login result", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "requires_2fa": { "type": "boolean" }, "error": { "type": "string" }, "session_token": { "type": "string" } } } } } } }
+      }
+    },
+    "/api/auth/2fa": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Verify a 2FA one-time code for a pending login",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["otp"], "properties": { "otp": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "OK" }, "400": { "description": "No pending 2FA session" } }
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Register a new account with an invite code",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["username", "password", "password_confirm", "invite_code"], "properties": { "username": { "type": "string" }, "password": { "type": "string" }, "password_confirm": { "type": "string" }, "invite_code": { "type": "string" } } } } } },
+        "responses": { "201": { "description": "Created" }, "400": { "description": "Validation error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } } }
+      }
+    },
+    "/api/auth/logout": {
+      "post": { "tags": ["auth"], "summary": "Destroy the current session", "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/users/me": {
+      "get": { "tags": ["users"], "summary": "Current user's profile", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Profile" } } } }, "401": { "description": "Unauthenticated" } } },
+      "patch": { "tags": ["users"], "summary": "Update display name / bio", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "display_name": { "type": "string" }, "bio": { "type": "string", "nullable": true } } } } } }, "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Profile" } } } } } }
+    },
+    "/api/users/": {
+      "get": { "tags": ["users"], "summary": "List all users (admin)", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Profile" } } } } }, "403": { "description": "Not an admin" } } }
+    },
+    "/api/users/{full_id}": {
+      "get": { "tags": ["users"], "summary": "Look up a profile by username@domain (federation-aware)", "parameters": [{ "name": "full_id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Profile" } } } }, "404": { "description": "Not found" }, "502": { "description": "Remote server unreachable" } } },
+      "delete": { "tags": ["users"], "summary": "Deactivate a local user (admin)", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "parameters": [{ "name": "full_id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/users/push/vapid_public_key": {
+      "get": { "tags": ["users"], "summary": "VAPID public key for browser push subscription", "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "properties": { "publicKey": { "type": "string" } } } } } } } }
+    },
+    "/api/users/me/push/subscribe": {
+      "post": { "tags": ["users"], "summary": "Register a browser push subscription", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "endpoint": { "type": "string" }, "keys": { "type": "object", "properties": { "p256dh": { "type": "string" }, "auth": { "type": "string" } } } } } } } }, "responses": { "200": { "description": "OK" } } },
+      "delete": { "tags": ["users"], "summary": "Remove a browser push subscription", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "parameters": [{ "name": "endpoint", "in": "query", "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/users/me/activity": {
+      "post": { "tags": ["users"], "summary": "Record an activity ping (presence)", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/users/me/picture": {
+      "post": { "tags": ["users"], "summary": "Upload a profile picture", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "requestBody": { "required": true, "content": { "multipart/form-data": { "schema": { "type": "object", "properties": { "file": { "type": "string", "format": "binary" } } } } } }, "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "properties": { "profile_pic": { "type": "string", "nullable": true } } } } } } } },
+      "delete": { "tags": ["users"], "summary": "Remove the profile picture", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/users/me/2fa/setup": {
+      "post": { "tags": ["users"], "summary": "Begin 2FA enrolment — returns secret + QR", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "properties": { "secret": { "type": "string" }, "qr_code": { "type": "string" }, "provisioning_uri": { "type": "string" } } } } } } } }
+    },
+    "/api/users/me/2fa/enable": {
+      "post": { "tags": ["users"], "summary": "Confirm and enable 2FA", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["otp"], "properties": { "otp": { "type": "string" } } } } } }, "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/users/me/2fa/disable": {
+      "post": { "tags": ["users"], "summary": "Disable 2FA (password required)", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["password"], "properties": { "password": { "type": "string" } } } } } }, "responses": { "200": { "description": "OK" }, "403": { "description": "Invalid password" } } }
+    },
+    "/api/chats/": {
+      "get": { "tags": ["chats"], "summary": "List conversations", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Chat" } } } } } } }
+    },
+    "/api/chats/{target}/messages": {
+      "get": { "tags": ["chats"], "summary": "Message history for a DM or channel", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "parameters": [{ "name": "target", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "since", "in": "query", "schema": { "type": "number" } }, { "name": "before", "in": "query", "schema": { "type": "number" } }, { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } }], "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Message" } } } } } } },
+      "post": { "tags": ["chats"], "summary": "Send a message", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "parameters": [{ "name": "target", "in": "path", "required": true, "schema": { "type": "string" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["text"], "properties": { "text": { "type": "string" } } } } } }, "responses": { "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Message" } } } }, "404": { "description": "Recipient not found" }, "502": { "description": "Remote server unreachable" } } }
+    },
+    "/api/chats/{target}/messages/{message_id}": {
+      "delete": { "tags": ["chats"], "summary": "Delete a message you sent", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "parameters": [{ "name": "target", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "message_id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "204": { "description": "Deleted" }, "403": { "description": "Not the author" }, "404": { "description": "Not found" } } }
+    },
+    "/api/upload/": {
+      "post": { "tags": ["uploads"], "summary": "Upload a file, returns a markdown embed", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "requestBody": { "required": true, "content": { "multipart/form-data": { "schema": { "type": "object", "properties": { "file": { "type": "string", "format": "binary" } } } } } }, "responses": { "201": { "description": "Created", "content": { "application/json": { "schema": { "type": "object", "properties": { "url": { "type": "string" }, "mimetype": { "type": "string" }, "markdown": { "type": "string" } } } } } }, "413": { "description": "Over quota" } } }
+    },
+    "/api/upload/{upload_id}": {
+      "delete": { "tags": ["uploads"], "summary": "Delete one of your uploads", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "parameters": [{ "name": "upload_id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "204": { "description": "Deleted" } } }
+    },
+    "/api/upload/user/list": {
+      "get": { "tags": ["uploads"], "summary": "List your uploads and quota usage", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "properties": { "uploads": { "type": "array", "items": { "type": "object" } }, "total_size_bytes": { "type": "integer" }, "limit_bytes": { "type": "integer" } } } } } } } }
+    },
+    "/api/invites/": {
+      "get": { "tags": ["invites"], "summary": "List invite codes (admin)", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Invite" } } } } } } }
+    },
+    "/api/invites/generate": {
+      "post": { "tags": ["invites"], "summary": "Generate a new invite code (admin)", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "responses": { "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Invite" } } } } } }
+    },
+    "/api/user/webhooks": {
+      "get": { "tags": ["webhooks"], "summary": "List your webhooks", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Webhook" } } } } } } },
+      "post": { "tags": ["webhooks"], "summary": "Create a webhook (name is immutable)", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" }, "avatar_url": { "type": "string", "nullable": true } } } } } }, "responses": { "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Webhook" } } } } } }
+    },
+    "/api/user/webhooks/{id}": {
+      "delete": { "tags": ["webhooks"], "summary": "Delete a webhook", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "204": { "description": "Deleted" } } }
+    },
+    "/api/user/webhooks/{id}/regenerate": {
+      "post": { "tags": ["webhooks"], "summary": "Regenerate a webhook token", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "properties": { "url": { "type": "string" } } } } } } } }
+    },
+    "/api/admin/config": {
+      "get": { "tags": ["admin"], "summary": "Get default storage limit", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "properties": { "storage_limit_mb": { "type": "integer" } } } } } } } },
+      "patch": { "tags": ["admin"], "summary": "Update default storage limit", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "storage_limit_mb": { "type": "integer" } } } } } }, "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/admin/users/{username}/storage": {
+      "get": { "tags": ["admin"], "summary": "Get a user's storage limit", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "parameters": [{ "name": "username", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } },
+      "patch": { "tags": ["admin"], "summary": "Update a user's storage limit", "security": [{ "sessionCookie": [] }, { "sessionHeader": [] }], "parameters": [{ "name": "username", "in": "path", "required": true, "schema": { "type": "string" } }], "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "storage_limit_mb": { "type": "integer" } } } } } }, "responses": { "200": { "description": "OK" } } }
+    },
+    "/webhooks/{webhook_id}/{webhook_token}": {
+      "post": { "tags": ["webhooks"], "summary": "Incoming webhook endpoint (external callers)", "parameters": [{ "name": "webhook_id", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "webhook_token", "in": "path", "required": true, "schema": { "type": "string" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["content"], "properties": { "content": { "type": "string" }, "username": { "type": "string" }, "avatar_url": { "type": "string" } } } } } }, "responses": { "201": { "description": "Created" }, "404": { "description": "Invalid webhook" } } }
+    },
+    "/media/proxy": {
+      "get": { "summary": "Cached media proxy", "parameters": [{ "name": "url", "in": "query", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "The media bytes" }, "400": { "description": "Missing URL" }, "502": { "description": "Fetch failed" } } }
+    },
+    "/federation/receive": {
+      "post": { "tags": ["federation"], "summary": "Receive a federated message", "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "id": { "type": "string" }, "sender": { "type": "string" }, "receiver": { "type": "string" }, "text": { "type": "string" }, "validationKey": { "type": "string" } } } } } }, "responses": { "200": { "description": "Stored" }, "401": { "description": "Validation failed" } } }
+    },
+    "/federation/validate": {
+      "get": { "tags": ["federation"], "summary": "Confirm a message originated here", "parameters": [{ "name": "messageId", "in": "query", "schema": { "type": "string" } }, { "name": "validationKey", "in": "query", "schema": { "type": "string" } }, { "name": "sender", "in": "query", "schema": { "type": "string" } }, { "name": "receiver", "in": "query", "schema": { "type": "string" } }], "responses": { "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "properties": { "valid": { "type": "boolean" } } } } } } } }
+    },
+    "/.well-known/BSCP/userserver": {
+      "get": { "summary": "Server discovery document", "responses": { "200": { "description": "OK" } } }
+    }
+  }
+}

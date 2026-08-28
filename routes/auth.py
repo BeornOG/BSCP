@@ -92,8 +92,8 @@ class LoginResource(MethodView):
             session["pending_user_id"] = user.id
             return {"success": False, "requires_2fa": True}
 
-        _create_session(db, user)
-        return {"success": True}
+        device_token = _create_session(db, user)
+        return {"success": True, "session_token": device_token}
 
 
 # ── /2fa ──────────────────────────────────────────────────────────────────
@@ -119,8 +119,8 @@ class TwoFactorResource(MethodView):
         if not totp.verify(data["otp"]):
             return {"success": False, "error": "Invalid code"}
 
-        _create_session(db, user)
-        return {"success": True}
+        device_token = _create_session(db, user)
+        return {"success": True, "session_token": device_token}
 
 
 # ── /register ─────────────────────────────────────────────────────────────
@@ -233,3 +233,4 @@ def _create_session(db, user):
     db.session.commit()
     session.clear()
     session["session_token"] = device_token
+    return device_token
