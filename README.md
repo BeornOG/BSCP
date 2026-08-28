@@ -10,9 +10,8 @@ the protocol also supports /.well-known/BSCP/ for usecases where you want to use
 
 ## Prerequisites
 
-- **Python 3.10+**
-- **Node.js 18+**
-node is only needed to compile front-end, not needed if you pre-compile the front-end on another device
+- **Rust 1.97+** (`rustup`), for building the servers
+- **Node.js 18+**, only needed to compile the front-end (not needed if you pre-compile it on another device)
 
 # userserver
 
@@ -25,47 +24,61 @@ node is only needed to compile front-end, not needed if you pre-compile the fron
    npm install
    ```
 
-2. Start the dev server:
+2. Build the SPA (output goes to `../static/`, which the user server serves):
 
    ```bash
    npm exec vite build
    ```
 
-
 ## Backend Setup
 
-1. Install Python dependencies:
+The backend is a Cargo workspace with three crates:
 
-   ```bash
-   pip install flask flask-sqlalchemy python-dotenv werkzeug pyotp requests qrcode
-   ```
+| Crate | Binary | Purpose |
+|---|---|---|
+| `crates/common` | — | shared config, DB, models, auth, federation, push |
+| `crates/userserver` | `bscp-userserver` | the user server (`/api/*`, `/federation/*`, media proxy, SPA) |
+| `crates/channelserver` | `bscp-channelserver` | the channel server (`/api/channel/*`) |
 
-2. Create a `.env` file in the project root (or use one of the test configs in `Testing/`):
+1. Create a `.env` file in the project root (or use one of the test configs in `Testing/`):
 
    ```env
    PORT=5000
    DOMAIN=localhost:5000
-   DB_NAME=database.db
+   DB_NAME=data/userserver.db
    CACHE_DIR=media_cache
    CACHE_TIME=86400
    UPLOAD_DIR=uploads
+   SECRET_KEY=change-me
    ```
 
-3. Start the backend:
+2. Run the user server (development build — this build also serves the Swagger UI at
+   `/api/docs/`):
 
    ```bash
-   python app.py
+   cargo run -p bscp-userserver -- Testing/NodeA.env
    ```
 
-   Or with a specific env file:
+   Positional arg = env file (default `.env`); `--db <path>` overrides `DB_NAME`.
+
+3. For deployment, build the optimised binary (the `/api/docs/` endpoint is compiled out of
+   release builds):
 
    ```bash
-   python app.py Testing/NodeA.env
+   cargo build --release
+   ./target/release/bscp-userserver .env
    ```
 
-   The backend runs on `http://localhost:5000` with auto-reloading enabled.
+The database schema is created automatically on first run via embedded migrations
+(`crates/userserver/migrations/`). SQLite files are created if missing.
 
+### Channel server
 
+```bash
+cargo run -p bscp-channelserver -- Testing/Channel.env
+```
+
+Reads `CH_PORT` (default 6000), `CH_DB_NAME` (default `data/channelserver.db`) and `DOMAIN`.
 
 ## First-Time Setup
 
@@ -73,31 +86,27 @@ node is only needed to compile front-end, not needed if you pre-compile the fron
 2. You'll be redirected to the setup page to create an admin account.
 3. After setup, log in with your new credentials.
 
+## Tests
+
+```bash
+cargo test --workspace
+```
+
 ## Project Structure
 
 ```
 BSCP/
-├── app.py              # Flask application & API routes
-├── web.py              # Auth API endpoints (/api/auth/*)
-├── federation.py       # Federation protocol
-├── json_discovery.py   # Server discovery
-├── frontend/           # React SPA (Vite + TypeScript)
-│   ├── src/
-│   │   ├── App.tsx             # Router & route definitions
-│   │   ├── hooks/useAuth.ts    # Auth hook (login, register, 2FA)
-│   │   └── pages/
-│   │       ├── ChatPage.tsx      # Main chat UI
-│   │       ├── LoginPage.tsx     # Login form
-│   │       ├── RegisterPage.tsx  # Registration with invite codes
-│   │       ├── SetupPage.tsx     # First-time admin setup
-│   │       ├── TwoFactorPage.tsx # 2FA verification
-│   │       └── AdminPage.tsx     # User & invite management
-│   └── vite.config.ts  # Vite config with API proxy
-├── Testing/            # Test environment configs
-│   ├── NodeA.env
-│   ├── NodeB.env
-│   └── Channel.env
-└── .env                # Local environment config
+├── Cargo.toml               # workspace
+├── rust-toolchain.toml
+├── crates/
+│   ├── common/              # shared library (bscp-common)
+│   ├── userserver/          # bscp-userserver binary + migrations/ + openapi.json
+│   │   └── src/routes/      # auth, users, chats, uploads, invites, webhooks, admin,
+│   │                        #   federation, misc (media proxy, .well-known, SPA)
+│   └── channelserver/       # bscp-channelserver binary + migrations/
+├── frontend/                # React SPA (Vite + TypeScript), builds to ../static/
+├── Testing/                 # Test environment configs (NodeA/NodeB/Channel .env)
+└── static/                  # built frontend (git-ignored)
 ```
 
 ## Multi-Node Testing
@@ -106,10 +115,10 @@ To run multiple federated nodes locally:
 
 ```bash
 # Terminal 1
-python app.py Testing/NodeA.env
+cargo run -p bscp-userserver -- Testing/NodeA.env
 
 # Terminal 2
-python app.py Testing/NodeB.env
+cargo run -p bscp-userserver -- Testing/NodeB.env
 ```
 
 Each node gets its own database and port as defined in its env file.
