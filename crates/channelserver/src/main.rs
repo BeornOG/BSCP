@@ -37,9 +37,8 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState { pool, domain: cfg.domain.clone(), discovery: Arc::new(Discovery::new()) };
     let app: Router = routes::router(state);
 
-    let addr = format!("0.0.0.0:{}", cfg.port);
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    tracing::info!("Channel server listening on {addr}");
+    let listener = bscp_common::net::listen(cfg.port).await?;
+    tracing::info!("Channel server listening on :{} (dual-stack)", cfg.port);
     axum::serve(listener, app).await?;
     Ok(())
 }

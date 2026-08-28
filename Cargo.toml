@@ -8,7 +8,11 @@ edition = "2021"
 license = "MIT"
 
 [workspace.dependencies]
-axum = { version = "0.7", features = ["multipart", "macros"] }
+axum = { version = "0.7", features = ["multipart", "macros", "ws"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots", "connect"] }
+webrtc = "0.14"
+futures-util = "0.3"
+socket2 = "0.5"
 axum-extra = { version = "0.9", features = ["cookie", "cookie-private", "typed-header"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"

@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod auth;
+pub mod calls;
 pub mod chats;
 pub mod federation;
 pub mod invites;
@@ -26,6 +27,7 @@ pub fn build(state: AppState) -> Router {
         .merge(webhooks::router())
         .merge(admin::router())
         .merge(federation::router())
+        .merge(calls::router())
         .merge(misc::router());
 
     #[cfg(debug_assertions)]

@@ -75,7 +75,7 @@ impl CallManager {
 
     /// Create an ephemeral `Direct` call. Returns its id and the handshake token
     /// the invited peer domain must present on the manager WS.
-    pub fn open_direct(&self, invited_domain: &ServerId) -> (CallId, String) {
+    pub fn open_direct(&self, invited_domain: &str) -> (CallId, String) {
         let id = crate::uuid();
         let token = crate::random_token(24);
         let mut call = Call {
@@ -86,16 +86,16 @@ impl CallManager {
             participants: Vec::new(),
             tokens: HashMap::new(),
         };
-        call.tokens.insert(invited_domain.clone(), token.clone());
+        call.tokens.insert(invited_domain.to_string(), token.clone());
         self.calls.lock().unwrap().insert(id.clone(), call);
         (id, token)
     }
 
     /// Mint (or return) a token for another domain to join an existing call.
-    pub fn mint_token(&self, call_id: &CallId, domain: &ServerId) -> Option<String> {
+    pub fn mint_token(&self, call_id: &str, domain: &str) -> Option<String> {
         let mut calls = self.calls.lock().unwrap();
         let call = calls.get_mut(call_id)?;
-        Some(call.tokens.entry(domain.clone()).or_insert_with(|| crate::random_token(24)).clone())
+        Some(call.tokens.entry(domain.to_string()).or_insert_with(|| crate::random_token(24)).clone())
     }
 
     /// Get-or-create the persistent room for `channel_path`.
@@ -120,7 +120,7 @@ impl CallManager {
         id
     }
 
-    pub fn verify_token(&self, call_id: &CallId, domain: &ServerId, token: &str) -> bool {
+    pub fn verify_token(&self, call_id: &str, domain: &str, token: &str) -> bool {
         self.calls
             .lock()
             .unwrap()
@@ -130,48 +130,88 @@ impl CallManager {
             .unwrap_or(false)
     }
 
-    pub fn kind(&self, call_id: &CallId) -> Option<CallKind> {
+    pub fn kind(&self, call_id: &str) -> Option<CallKind> {
         self.calls.lock().unwrap().get(call_id).map(|c| c.kind.clone())
     }
 
-    pub fn exists(&self, call_id: &CallId) -> bool {
+    pub fn exists(&self, call_id: &str) -> bool {
         self.calls.lock().unwrap().contains_key(call_id)
     }
 
     /// Attach a participant server. Sends it the current `Roster`, and tells the
     /// others `ParticipantJoined`.
-    pub fn join(&self, call_id: &CallId, ps: ParticipantServer) -> Result<(), CallError> {
+    pub fn join(&self, call_id: &str, ps: ParticipantServer) -> Result<(), CallError> {
         let mut calls = self.calls.lock().unwrap();
         let call = calls.get_mut(call_id).ok_or(CallError::NotFound)?;
 
         call.participants.retain(|p| p.domain != ps.domain);
-        let joined = SignalMsg::ParticipantJoined {
-            call_id: call_id.clone(),
+        call.broadcast(&SignalMsg::ParticipantJoined {
+            call_id: call_id.to_string(),
             server: ps.domain.clone(),
             members: ps.members.clone(),
-        };
-        call.broadcast(&joined);
+        });
 
         call.participants.push(ps);
-        let roster = SignalMsg::Roster { call_id: call_id.clone(), participants: call.roster() };
+        let roster = SignalMsg::Roster { call_id: call_id.to_string(), participants: call.roster() };
         call.broadcast(&roster);
         Ok(())
     }
 
+    /// Add a member to an already-attached participant server and re-broadcast
+    /// the roster (used when a second local user joins the same server's call).
+    pub fn add_member(&self, call_id: &str, domain: &str, member: &str) {
+        let mut calls = self.calls.lock().unwrap();
+        let Some(call) = calls.get_mut(call_id) else { return };
+        if let Some(p) = call.participants.iter_mut().find(|p| p.domain == domain) {
+            if !p.members.iter().any(|m| m == member) {
+                p.members.push(member.to_string());
+            }
+        }
+        call.broadcast(&SignalMsg::ParticipantJoined {
+            call_id: call_id.to_string(),
+            server: domain.to_string(),
+            members: vec![member.to_string()],
+        });
+        call.broadcast(&SignalMsg::Roster { call_id: call_id.to_string(), participants: call.roster() });
+    }
+
+    /// Remove one member from a participant server. Returns the number of members
+    /// still on that server (so the caller can `leave` when it hits zero).
+    pub fn remove_member(&self, call_id: &str, domain: &str, member: &str) -> usize {
+        let mut calls = self.calls.lock().unwrap();
+        let Some(call) = calls.get_mut(call_id) else { return 0 };
+        let Some(p) = call.participants.iter_mut().find(|p| p.domain == domain) else { return 0 };
+        p.members.retain(|m| m != member);
+        p.muted.retain(|m| m != member);
+        let left = p.members.len();
+        call.broadcast(&SignalMsg::Roster { call_id: call_id.to_string(), participants: call.roster() });
+        left
+    }
+
+    /// True when this server already has a participant entry for the call.
+    pub fn has_participant(&self, call_id: &str, domain: &str) -> bool {
+        self.calls
+            .lock()
+            .unwrap()
+            .get(call_id)
+            .map(|c| c.participants.iter().any(|p| p.domain == domain))
+            .unwrap_or(false)
+    }
+
     /// Detach a participant server. Ephemeral calls with no participants left are
     /// dropped; persistent rooms are kept.
-    pub fn leave(&self, call_id: &CallId, domain: &ServerId) {
+    pub fn leave(&self, call_id: &str, domain: &str) {
         let mut calls = self.calls.lock().unwrap();
         let Some(call) = calls.get_mut(call_id) else { return };
 
         let before = call.participants.len();
-        call.participants.retain(|p| &p.domain != domain);
+        call.participants.retain(|p| p.domain != domain);
         if call.participants.len() == before {
             return;
         }
 
-        call.broadcast(&SignalMsg::ParticipantLeft { call_id: call_id.clone(), server: domain.clone() });
-        call.broadcast(&SignalMsg::Roster { call_id: call_id.clone(), participants: call.roster() });
+        call.broadcast(&SignalMsg::ParticipantLeft { call_id: call_id.to_string(), server: domain.to_string() });
+        call.broadcast(&SignalMsg::Roster { call_id: call_id.to_string(), participants: call.roster() });
 
         if call.participants.is_empty() && !call.kind.is_persistent() {
             calls.remove(call_id);
@@ -179,10 +219,10 @@ impl CallManager {
     }
 
     /// End a call for everyone.
-    pub fn end(&self, call_id: &CallId, reason: &str) {
+    pub fn end(&self, call_id: &str, reason: &str) {
         let mut calls = self.calls.lock().unwrap();
         let Some(call) = calls.get(call_id) else { return };
-        call.broadcast(&SignalMsg::CallEnded { call_id: call_id.clone(), reason: reason.to_string() });
+        call.broadcast(&SignalMsg::CallEnded { call_id: call_id.to_string(), reason: reason.to_string() });
         if let CallKind::ChannelRoom { channel_path } = &call.kind {
             self.rooms.lock().unwrap().remove(channel_path);
         }
@@ -191,7 +231,8 @@ impl CallManager {
 
     /// Forward a point-to-point frame (`Sdp` / `Ice`) to its target server.
     pub fn route(&self, frame: SignalMsg) {
-        let (Some(call_id), Some(target)) = (frame.call_id().map(str::to_string), frame.route_target().map(str::to_string))
+        let (Some(call_id), Some(target)) =
+            (frame.call_id().map(str::to_string), frame.route_target().map(str::to_string))
         else {
             return;
         };
@@ -203,19 +244,23 @@ impl CallManager {
         }
     }
 
-    pub fn set_muted(&self, call_id: &CallId, domain: &ServerId, member: &ParticipantId, muted: bool) {
+    pub fn set_muted(&self, call_id: &str, domain: &str, member: &str, muted: bool) {
         let mut calls = self.calls.lock().unwrap();
         let Some(call) = calls.get_mut(call_id) else { return };
-        if let Some(p) = call.participants.iter_mut().find(|p| &p.domain == domain) {
+        if let Some(p) = call.participants.iter_mut().find(|p| p.domain == domain) {
             p.muted.retain(|m| m != member);
             if muted {
-                p.muted.push(member.clone());
+                p.muted.push(member.to_string());
             }
         }
-        call.broadcast(&SignalMsg::Mute { call_id: call_id.clone(), member: member.clone(), muted });
+        call.broadcast(&SignalMsg::Mute {
+            call_id: call_id.to_string(),
+            member: member.to_string(),
+            muted,
+        });
     }
 
-    pub fn roster(&self, call_id: &CallId) -> Option<Vec<RosterEntry>> {
+    pub fn roster(&self, call_id: &str) -> Option<Vec<RosterEntry>> {
         self.calls.lock().unwrap().get(call_id).map(|c| c.roster())
     }
 }
@@ -240,8 +285,8 @@ mod tests {
     #[test]
     fn direct_call_tears_down_when_empty() {
         let mgr = CallManager::new("a.example");
-        let (id, token) = mgr.open_direct(&"b.example".to_string());
-        assert!(mgr.verify_token(&id, &"b.example".to_string(), &token));
+        let (id, token) = mgr.open_direct("b.example");
+        assert!(mgr.verify_token(&id, "b.example", &token));
 
         let (pa, _ra) = participant("a.example");
         let (pb, _rb) = participant("b.example");
@@ -249,9 +294,9 @@ mod tests {
         mgr.join(&id, pb).unwrap();
         assert_eq!(mgr.roster(&id).unwrap().len(), 2);
 
-        mgr.leave(&id, &"a.example".to_string());
+        mgr.leave(&id, "a.example");
         assert!(mgr.exists(&id));
-        mgr.leave(&id, &"b.example".to_string());
+        mgr.leave(&id, "b.example");
         assert!(!mgr.exists(&id), "empty Direct call should be removed");
     }
 
@@ -263,14 +308,14 @@ mod tests {
 
         let (p, _r) = participant("x.example");
         mgr.join(&id, p).unwrap();
-        mgr.leave(&id, &"x.example".to_string());
+        mgr.leave(&id, "x.example");
         assert!(mgr.exists(&id), "empty ChannelRoom should persist");
     }
 
     #[test]
     fn join_notifies_existing_and_new() {
         let mgr = CallManager::new("a.example");
-        let (id, _) = mgr.open_direct(&"b.example".to_string());
+        let (id, _) = mgr.open_direct("b.example");
 
         let (pa, mut ra) = participant("a.example");
         mgr.join(&id, pa).unwrap();
@@ -292,7 +337,7 @@ mod tests {
     #[test]
     fn routes_sdp_to_target_only() {
         let mgr = CallManager::new("a.example");
-        let (id, _) = mgr.open_direct(&"b.example".to_string());
+        let (id, _) = mgr.open_direct("b.example");
         let (pa, mut ra) = participant("a.example");
         let (pb, mut rb) = participant("b.example");
         mgr.join(&id, pa).unwrap();

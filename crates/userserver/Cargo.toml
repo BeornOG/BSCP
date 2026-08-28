@@ -30,6 +30,9 @@ tracing-subscriber.workspace = true
 anyhow.workspace = true
 utoipa.workspace = true
 utoipa-swagger-ui.workspace = true
+tokio-tungstenite.workspace = true
+webrtc.workspace = true
+futures-util.workspace = true
 
 [dev-dependencies]
 tower = { workspace = true, features = ["util"] }

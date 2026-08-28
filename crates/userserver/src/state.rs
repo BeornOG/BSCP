@@ -1,3 +1,4 @@
+use crate::call::CallState;
 use axum::extract::FromRef;
 use axum_extra::extract::cookie::Key;
 use bscp_common::config::UserServerConfig;
@@ -13,6 +14,7 @@ pub struct AppState {
     pub discovery: Arc<Discovery>,
     pub vapid: Arc<Vapid>,
     pub cookie_key: Key,
+    pub calls: Arc<CallState>,
 }
 
 impl AppState {

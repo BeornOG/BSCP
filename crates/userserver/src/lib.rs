@@ -2,6 +2,7 @@
 //! Rust port of the Flask `app.py` + `web.py` + `routes/*` + `federation.py`.
 
 pub mod auth;
+pub mod call;
 pub mod media;
 #[cfg(debug_assertions)]
 pub mod openapi;
@@ -29,12 +30,14 @@ pub fn make_state(cfg: UserServerConfig, pool: SqlitePool) -> AppState {
         &cfg.vapid_keys_file,
     );
     let cookie_key = derive_cookie_key(&cfg.secret_key);
+    let calls = Arc::new(call::CallState::new(cfg.domain.clone()));
     AppState {
         pool,
         cfg: Arc::new(cfg),
         discovery: Arc::new(Discovery::new()),
         vapid: Arc::new(vapid),
         cookie_key,
+        calls,
     }
 }
 
@@ -61,9 +64,8 @@ pub async fn run() -> anyhow::Result<()> {
     tasks::spawn_cache_cleanup(state.cfg.clone());
 
     let app = routes::build(state);
-    let addr = format!("0.0.0.0:{port}");
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    tracing::info!("BSCP user server listening on {addr}");
+    let listener = bscp_common::net::listen(port).await?;
+    tracing::info!("BSCP user server listening on :{port} (dual-stack)");
     axum::serve(listener, app).await?;
     Ok(())
 }

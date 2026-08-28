@@ -50,7 +50,7 @@ pub fn session_token(jar: &PrivateCookieJar, parts: &Parts) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-async fn load_user_by_token(state: &AppState, token: &str) -> Option<User> {
+pub(crate) async fn load_user_by_token(state: &AppState, token: &str) -> Option<User> {
     let session = sqlx::query_as::<_, bscp_common::models::UserSession>(
         "SELECT * FROM user_sessions WHERE token = ?",
     )

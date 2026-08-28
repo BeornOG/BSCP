@@ -7,6 +7,7 @@ pub mod discovery;
 pub mod error;
 pub mod federation;
 pub mod models;
+pub mod net;
 pub mod password;
 pub mod push;
 pub mod totp;

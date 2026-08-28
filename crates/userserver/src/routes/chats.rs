@@ -290,6 +290,25 @@ pub(crate) async fn store_and_deliver(
         }
     }
 
+    // Local call signaling (same-server calls never hit federation).
+    if matches!(out.kind.as_str(), "call_invite" | "call_end") {
+        if let Some(local) = out.receiver.strip_suffix(&format!("@{}", state.domain())) {
+            if let (Some(meta), Ok(Some(rid))) = (
+                out.metadata.as_deref(),
+                sqlx::query_scalar::<_, String>("SELECT id FROM users WHERE username = ?")
+                    .bind(local)
+                    .fetch_optional(&state.pool)
+                    .await,
+            ) {
+                match out.kind.as_str() {
+                    "call_invite" => crate::call::ws::on_call_invite(state, &rid, &out.sender, meta),
+                    "call_end" => crate::call::ws::on_call_end(state, &rid, meta),
+                    _ => {}
+                }
+            }
+        }
+    }
+
     // Federate (background, best-effort).
     let payload = FedMessage {
         id: full_id.clone(),

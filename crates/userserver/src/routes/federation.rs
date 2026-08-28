@@ -80,16 +80,26 @@ async fn receive(State(state): State<AppState>, Json(data): Json<IncomingMessage
             .fetch_optional(&state.pool)
             .await
         {
+            let rid = recipient.id.clone();
             let (pool, vapid, disc) = (state.pool.clone(), state.vapid.clone(), state.discovery.clone());
             let title = if kind == "call_invite" {
                 format!("Incoming call from {}", data.sender)
             } else {
                 format!("New message from {}", data.sender)
             };
-            let text = data.text.clone();
+            let (text, push_rid) = (data.text.clone(), rid.clone());
             tokio::spawn(async move {
-                bscp_common::push::send_to_user(&pool, disc.client(), &vapid, &recipient.id, &title, &text, "/").await;
+                bscp_common::push::send_to_user(&pool, disc.client(), &vapid, &push_rid, &title, &text, "/").await;
             });
+
+            // Call signaling.
+            if let Some(meta) = data.metadata.as_deref() {
+                match kind.as_str() {
+                    "call_invite" => crate::call::ws::on_call_invite(&state, &rid, &data.sender, meta),
+                    "call_end" => crate::call::ws::on_call_end(&state, &rid, meta),
+                    _ => {}
+                }
+            }
         }
     }
 
