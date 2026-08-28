@@ -5,7 +5,7 @@ use crate::discovery::Discovery;
 use serde_json::{json, Value};
 use std::time::Duration;
 
-/// Outbound DM/channel message payload (matches the Python wire format).
+/// Outbound DM/channel message payload.
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct FedMessage {
     pub id: String,
@@ -14,6 +14,25 @@ pub struct FedMessage {
     pub text: String,
     #[serde(rename = "validationKey")]
     pub validation_key: String,
+    /// `text` (default) or a special kind such as `call_invite` / `call_end`.
+    #[serde(default = "default_kind", skip_serializing_if = "is_text_kind")]
+    pub kind: String,
+    /// JSON string with kind-specific fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<String>,
+}
+
+fn default_kind() -> String {
+    "text".to_string()
+}
+fn is_text_kind(k: &str) -> bool {
+    k == "text"
+}
+
+impl FedMessage {
+    pub fn text(id: String, sender: String, receiver: String, text: String, validation_key: String) -> Self {
+        Self { id, sender, receiver, text, validation_key, kind: "text".into(), metadata: None }
+    }
 }
 
 /// Ask the sender's origin server to confirm a message really originated there.

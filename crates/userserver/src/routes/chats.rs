@@ -22,7 +22,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/chats/:target/messages/:message_id", axum::routing::delete(delete_message))
 }
 
-fn serialize_message(m: &Message) -> Value {
+pub(crate) fn serialize_message(m: &Message) -> Value {
     json!({
         "id": m.id,
         "sender": m.sender,
@@ -30,6 +30,8 @@ fn serialize_message(m: &Message) -> Value {
         "text": m.text,
         "timestamp": m.timestamp,
         "is_read": m.is_read,
+        "kind": m.kind,
+        "metadata": m.metadata.as_deref().and_then(|s| serde_json::from_str::<Value>(s).ok()),
     })
 }
 
@@ -203,46 +205,87 @@ async fn send_message(
         return Err(ApiError::forbidden("Cannot send messages to webhooks"));
     }
 
-    let is_channel = target.contains('#');
-    if !is_channel {
-        match get_profile(&state, &receiver).await? {
-            Some(_) => {}
-            None => return Err(ApiError::not_found("User not found")),
-        }
+    if !target.contains('#') && get_profile(&state, &receiver).await?.is_none() {
+        return Err(ApiError::not_found("User not found"));
     }
 
+    let msg = store_and_deliver(
+        &state,
+        OutgoingMessage {
+            sender,
+            receiver,
+            target,
+            text: body.text,
+            kind: "text".into(),
+            metadata: None,
+        },
+        Some(&auth.user.username),
+        Some(&auth.user.id),
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(serialize_message(&msg))))
+}
+
+/// A message to persist locally and federate onward.
+pub(crate) struct OutgoingMessage {
+    pub sender: String,
+    /// `user@domain` recipient identity.
+    pub receiver: String,
+    /// Raw target path (may contain `#` for channels).
+    pub target: String,
+    pub text: String,
+    pub kind: String,
+    pub metadata: Option<String>,
+}
+
+/// Persist a message, fire the recipient push, and federate it — the shared core of
+/// `POST /api/chats/:target/messages` and the call subsystem's `call_invite`/`call_end`.
+pub(crate) async fn store_and_deliver(
+    state: &AppState,
+    out: OutgoingMessage,
+    push_from_username: Option<&str>,
+    skip_push_user_id: Option<&str>,
+) -> Result<Message, ApiError> {
     let msg_uuid = uuid();
     let full_id = format!("{}/{}", state.domain(), msg_uuid);
     let val_key = format!("key-{}", &msg_uuid[..8]);
     let ts = now_ts();
 
     sqlx::query(
-        "INSERT INTO messages (id, sender, receiver, text, validation_key, timestamp, is_read) \
-         VALUES (?, ?, ?, ?, ?, ?, 0)",
+        "INSERT INTO messages (id, sender, receiver, text, validation_key, timestamp, is_read, kind, metadata) \
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)",
     )
     .bind(&full_id)
-    .bind(&sender)
-    .bind(&receiver)
-    .bind(&body.text)
+    .bind(&out.sender)
+    .bind(&out.receiver)
+    .bind(&out.text)
     .bind(&val_key)
     .bind(ts)
+    .bind(&out.kind)
+    .bind(&out.metadata)
     .execute(&state.pool)
     .await?;
 
     // Local push (background).
-    if let Some(local) = receiver.strip_suffix(&format!("@{}", state.domain())) {
-        if let Some(recipient) = sqlx::query_as::<_, User>("SELECT * FROM users WHERE username = ?")
-            .bind(local)
-            .fetch_optional(&state.pool)
-            .await?
-        {
-            if recipient.id != auth.user.id {
-                let (pool, vapid, disc) =
-                    (state.pool.clone(), state.vapid.clone(), state.discovery.clone());
-                let (title, text) = (format!("New message from {}", auth.user.username), body.text.clone());
-                tokio::spawn(async move {
-                    bscp_common::push::send_to_user(&pool, disc.client(), &vapid, &recipient.id, &title, &text, "/").await;
-                });
+    if let Some(from) = push_from_username {
+        if let Some(local) = out.receiver.strip_suffix(&format!("@{}", state.domain())) {
+            if let Some(recipient) = sqlx::query_as::<_, User>("SELECT * FROM users WHERE username = ?")
+                .bind(local)
+                .fetch_optional(&state.pool)
+                .await?
+            {
+                if Some(recipient.id.as_str()) != skip_push_user_id {
+                    let (pool, vapid, disc) = (state.pool.clone(), state.vapid.clone(), state.discovery.clone());
+                    let title = if out.kind == "call_invite" {
+                        format!("Incoming call from {from}")
+                    } else {
+                        format!("New message from {from}")
+                    };
+                    let text = out.text.clone();
+                    tokio::spawn(async move {
+                        bscp_common::push::send_to_user(&pool, disc.client(), &vapid, &recipient.id, &title, &text, "/").await;
+                    });
+                }
             }
         }
     }
@@ -250,14 +293,16 @@ async fn send_message(
     // Federate (background, best-effort).
     let payload = FedMessage {
         id: full_id.clone(),
-        sender: sender.clone(),
-        receiver: receiver.clone(),
-        text: body.text.clone(),
+        sender: out.sender.clone(),
+        receiver: out.receiver.clone(),
+        text: out.text.clone(),
         validation_key: val_key.clone(),
+        kind: out.kind.clone(),
+        metadata: out.metadata.clone(),
     };
     let disc = state.discovery.clone();
-    let target_clone = target.clone();
-    let receiver_clone = receiver.clone();
+    let target_clone = out.target.clone();
+    let receiver_clone = out.receiver.clone();
     tokio::spawn(async move {
         if let Some(dom) = target_clone.contains('#').then(|| target_clone.split('#').next().unwrap_or_default().to_string()) {
             federation::deliver_channel(&disc, &dom, &payload).await;
@@ -266,16 +311,17 @@ async fn send_message(
         }
     });
 
-    let msg = Message {
+    Ok(Message {
         id: full_id,
-        sender,
-        receiver,
-        text: body.text,
+        sender: out.sender,
+        receiver: out.receiver,
+        text: out.text,
         validation_key: Some(val_key),
         timestamp: ts,
         is_read: false,
-    };
-    Ok((StatusCode::CREATED, Json(serialize_message(&msg))))
+        kind: out.kind,
+        metadata: out.metadata,
+    })
 }
 
 // ── DELETE /api/chats/:target/messages/:message_id ─────────────────────

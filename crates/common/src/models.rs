@@ -48,6 +48,10 @@ pub struct Message {
     pub validation_key: Option<String>,
     pub timestamp: f64,
     pub is_read: bool,
+    /// `text` (default) or a special kind such as `call_invite` / `call_end`.
+    pub kind: String,
+    /// JSON string with kind-specific fields (call_id, manager_ws_url, ...).
+    pub metadata: Option<String>,
 }
 
 #[derive(Debug, Clone, FromRow)]

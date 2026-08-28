@@ -5,6 +5,8 @@ export interface Message {
   text: string;
   timestamp: number;
   is_read: boolean;
+  kind?: string;
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface Chat {

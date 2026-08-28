@@ -51,7 +51,9 @@
           "receiver": { "type": "string" },
           "text": { "type": "string" },
           "timestamp": { "type": "number" },
-          "is_read": { "type": "boolean" }
+          "is_read": { "type": "boolean" },
+          "kind": { "type": "string", "description": "'text' or a special kind such as 'call_invite' / 'call_end'", "default": "text" },
+          "metadata": { "type": "object", "nullable": true, "description": "kind-specific fields (e.g. call_id, manager_ws_url)" }
         }
       },
       "Chat": {

@@ -25,6 +25,10 @@ struct IncomingMessage {
     text: String,
     #[serde(rename = "validationKey")]
     validation_key: Option<String>,
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    metadata: Option<String>,
 }
 
 async fn receive(State(state): State<AppState>, Json(data): Json<IncomingMessage>) -> impl IntoResponse {
@@ -48,9 +52,10 @@ async fn receive(State(state): State<AppState>, Json(data): Json<IncomingMessage
         return (StatusCode::UNAUTHORIZED, "Invalid").into_response();
     }
 
+    let kind = data.kind.clone().unwrap_or_else(|| "text".to_string());
     let insert = sqlx::query(
-        "INSERT INTO messages (id, sender, receiver, text, validation_key, timestamp, is_read) \
-         VALUES (?, ?, ?, ?, ?, ?, 0)",
+        "INSERT INTO messages (id, sender, receiver, text, validation_key, timestamp, is_read, kind, metadata) \
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)",
     )
     .bind(&data.id)
     .bind(&data.sender)
@@ -58,6 +63,8 @@ async fn receive(State(state): State<AppState>, Json(data): Json<IncomingMessage
     .bind(&data.text)
     .bind(&data.validation_key)
     .bind(now_ts())
+    .bind(&kind)
+    .bind(&data.metadata)
     .execute(&state.pool)
     .await;
 
@@ -74,7 +81,12 @@ async fn receive(State(state): State<AppState>, Json(data): Json<IncomingMessage
             .await
         {
             let (pool, vapid, disc) = (state.pool.clone(), state.vapid.clone(), state.discovery.clone());
-            let (title, text) = (format!("New message from {}", data.sender), data.text.clone());
+            let title = if kind == "call_invite" {
+                format!("Incoming call from {}", data.sender)
+            } else {
+                format!("New message from {}", data.sender)
+            };
+            let text = data.text.clone();
             tokio::spawn(async move {
                 bscp_common::push::send_to_user(&pool, disc.client(), &vapid, &recipient.id, &title, &text, "/").await;
             });

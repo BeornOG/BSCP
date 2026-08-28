@@ -1,5 +1,6 @@
 //! Shared building blocks for the BSCP user server and channel server.
 
+pub mod call;
 pub mod config;
 pub mod db;
 pub mod discovery;
