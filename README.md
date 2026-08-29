@@ -8,6 +8,20 @@ a channel is defined as ``[domain]#[channel]#[subchannel]#[subchannel]``
 
 the protocol also supports /.well-known/BSCP/ for usecases where you want to use a domain but don't want the federation api there.
 
+## Voice calls
+
+Audio calls follow the same privacy rule as the media proxy: a browser only ever connects to
+**its own user server**. Every call has one *manager* that relays signaling (SDP/ICE) but never
+media — for a DM call the manager runs on the caller's user server; for a channel voice room it
+runs on the channel server. Audio flows browser ⇄ own user server ⇄ (mesh of) the other
+participants' user servers ⇄ their browsers; each user server is a small Opus SFU. A DM call is
+started by sending a `call_invite` chat message whose metadata carries the manager address;
+the callee's client shows a ring and connects on accept. Channel rooms are join-by-choice.
+
+Config: `ICE_PUBLIC_IP` (this server's public IP for 1:1 NAT) and `RTC_PORT_MIN`/`RTC_PORT_MAX`
+(the UDP range to open). No external STUN/TURN is needed as long as the user servers are
+mutually reachable (which federation already requires).
+
 ## Prerequisites
 
 - **Rust 1.97+** (`rustup`), for building the servers
@@ -50,6 +64,11 @@ The backend is a Cargo workspace with three crates:
    CACHE_TIME=86400
    UPLOAD_DIR=uploads
    SECRET_KEY=change-me
+
+   # Voice calls (WebRTC). Optional in dev; required for calls across NAT.
+   ICE_PUBLIC_IP=203.0.113.10   # this server's public IP (1:1 NAT)
+   RTC_PORT_MIN=50000           # open this UDP range on the firewall
+   RTC_PORT_MAX=50100
    ```
 
 2. Run the user server (development build — this build also serves the Swagger UI at

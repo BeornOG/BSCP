@@ -481,6 +481,7 @@ dependencies = [
  "axum-extra",
  "base64",
  "bscp-common",
+ "bytes",
  "chrono",
  "futures-util",
  "http-body-util",
