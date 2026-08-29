@@ -6,6 +6,7 @@ import { setActiveChatId as notifyActiveChatId } from '../hooks/useNotifications
 import ChatSidebar from '../components/chat/ChatSidebar';
 import MessageList from '../components/chat/MessageList';
 import MessageInput from '../components/chat/MessageInput';
+import CallBar from '../components/call/CallBar';
 import { Avatar, Modal, ProfileModal } from '../components/ui';
 import type { UserStatus } from '../components/ui/Avatar';
 import { api } from '../lib/api';
@@ -133,6 +134,9 @@ export default function ChatPage() {
                 {activeChatId !== activeChatName && (
                   <p className="text-[#71747a] text-xs truncate">{activeChatId}</p>
                 )}
+              </div>
+              <div className="ml-auto">
+                <CallBar peerId={activeChatId} />
               </div>
             </div>
 

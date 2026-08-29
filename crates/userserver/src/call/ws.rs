@@ -155,19 +155,35 @@ fn ensure_local_participant(state: &AppState, call_id: &str, user: &User) {
     let cid = call_id.to_string();
     tokio::spawn(async move {
         while let Some(msg) = mrx.recv().await {
-            match &msg {
-                SignalMsg::Sdp { .. } | SignalMsg::Ice { .. } => engine::on_mesh_signal(&st, &cid, msg.clone()).await,
-                SignalMsg::CallEnded { .. } => {
-                    st.calls.notify_call_locals(&cid, &msg);
-                    st.calls.drain_locals(&cid);
-                    st.calls.drop_manager_link(&cid);
-                    engine::teardown(&st, &cid).await;
-                    break;
-                }
-                _ => st.calls.notify_call_locals(&cid, &msg),
+            if handle_manager_frame(&st, &cid, msg).await {
+                break;
             }
         }
     });
+}
+
+/// Process one frame coming from the call manager toward this server. Returns
+/// `true` when the call has ended and the pump should stop.
+async fn handle_manager_frame(st: &AppState, cid: &str, msg: SignalMsg) -> bool {
+    match &msg {
+        SignalMsg::Sdp { .. } | SignalMsg::Ice { .. } => {
+            engine::on_mesh_signal(st, cid, msg).await;
+        }
+        SignalMsg::Roster { participants, .. } => {
+            let servers: Vec<String> = participants.iter().map(|p| p.server.clone()).collect();
+            st.calls.notify_call_locals(cid, &msg);
+            engine::on_roster(st, cid, &servers).await;
+        }
+        SignalMsg::CallEnded { .. } => {
+            st.calls.notify_call_locals(cid, &msg);
+            st.calls.drain_locals(cid);
+            st.calls.drop_manager_link(cid);
+            engine::teardown(st, cid).await;
+            return true;
+        }
+        _ => st.calls.notify_call_locals(cid, &msg),
+    }
+    false
 }
 
 async fn start_direct_call(state: &AppState, user: &User, to: &str) {
@@ -262,16 +278,8 @@ async fn accept_call(state: &AppState, user: &User, call_id: &str) {
         while let Some(Ok(m)) = src.next().await {
             let tokio_tungstenite::tungstenite::Message::Text(t) = m else { continue };
             let Ok(sig) = serde_json::from_str::<SignalMsg>(&t) else { continue };
-            match &sig {
-                SignalMsg::Sdp { .. } | SignalMsg::Ice { .. } => engine::on_mesh_signal(&st, &cid, sig.clone()).await,
-                SignalMsg::CallEnded { .. } => {
-                    st.calls.notify_call_locals(&cid, &sig);
-                    st.calls.drain_locals(&cid);
-                    st.calls.drop_manager_link(&cid);
-                    engine::teardown(&st, &cid).await;
-                    break;
-                }
-                _ => st.calls.notify_call_locals(&cid, &sig),
+            if handle_manager_frame(&st, &cid, sig).await {
+                break;
             }
         }
         st.calls.drop_manager_link(&cid);

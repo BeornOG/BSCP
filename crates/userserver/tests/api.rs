@@ -28,6 +28,9 @@ async fn server() -> TestServer {
         vapid_private_key: String::new(),
         vapid_contact: "mailto:test@localhost".into(),
         vapid_keys_file: dir.join("vapid.json"),
+        ice_public_ip: None,
+        rtc_port_min: 0,
+        rtc_port_max: 0,
     };
     std::fs::create_dir_all(&cfg.cache_dir).unwrap();
     std::fs::create_dir_all(&cfg.upload_dir).unwrap();

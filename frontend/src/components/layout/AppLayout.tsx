@@ -6,6 +6,8 @@ import { useIsAdmin } from "../../hooks/useAdmin";
 import { useUserActivityPing } from "../../hooks/useActivity";
 import { usePushNotifications, useMessageNotifications, initAudioContext } from "../../hooks/useNotifications";
 import { useChats } from "../../hooks/useChats";
+import { CallProvider } from "../../hooks/useCall";
+import IncomingCallModal from "../call/IncomingCallModal";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -34,7 +36,9 @@ export default function AppLayout({ children }: AppLayoutProps) {
     : navItems;
 
   return (
+    <CallProvider>
     <div className="flex h-screen bg-[#0a0a0b]">
+      <IncomingCallModal />
       <nav className="w-16 flex flex-col items-center py-4 border-r border-[#232529] bg-[#0a0a0b]">
         <span className="text-xl font-bold text-[var(--accent)] mb-8">A.</span>
 
@@ -99,5 +103,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
       <main className="flex-1 overflow-hidden">{children}</main>
     </div>
+    </CallProvider>
   );
 }

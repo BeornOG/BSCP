@@ -74,6 +74,7 @@ const MessageBubble: FC<MessageBubbleProps> = ({
   onAvatarClick,
   onDelete,
 }) => {
+  const call = (message.kind === 'call_invite' || message.kind === 'call_end') ? message : null;
   const renderedHtml = renderMarkdown(message.text);
 
   const formatTime = (ts: number): string => {
@@ -90,6 +91,26 @@ const MessageBubble: FC<MessageBubbleProps> = ({
       : formatTime(message.timestamp);
 
   const senderName = displayName || message.sender.split('@')[0];
+
+  if (call) {
+    const outcome = (call.metadata as Record<string, unknown> | undefined)?.outcome as string | undefined;
+    const label =
+      call.kind === 'call_invite'
+        ? 'Call started'
+        : outcome === 'rejected'
+          ? 'Call declined'
+          : outcome === 'missed'
+            ? 'Missed call'
+            : 'Call ended';
+    return (
+      <div className="flex justify-center my-1">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-[#1a1d21] px-3 py-1 text-xs text-[#71747a]">
+          <span className="material-symbols-outlined text-[14px]">call</span>
+          {label} · {formatTime(message.timestamp)}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div

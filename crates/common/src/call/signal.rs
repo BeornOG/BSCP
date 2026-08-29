@@ -50,9 +50,11 @@ pub enum SignalMsg {
         to: ServerId,
         candidate: String,
     },
-    /// Per-member mute state change.
+    /// Per-member mute state change. `member` is filled in by the sender's own
+    /// server when a browser omits it.
     Mute {
         call_id: CallId,
+        #[serde(default)]
         member: ParticipantId,
         muted: bool,
     },

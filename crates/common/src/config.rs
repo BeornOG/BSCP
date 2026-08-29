@@ -17,6 +17,11 @@ pub struct UserServerConfig {
     pub vapid_contact: String,
     /// Path where an auto-generated VAPID keypair is persisted.
     pub vapid_keys_file: PathBuf,
+    /// Public IP advertised for WebRTC ICE (1:1 NAT). Falls back to host candidates.
+    pub ice_public_ip: Option<String>,
+    /// UDP port range for WebRTC media (open these on the firewall).
+    pub rtc_port_min: u16,
+    pub rtc_port_max: u16,
 }
 
 #[derive(Debug, Clone)]
@@ -134,6 +139,9 @@ impl UserServerConfig {
             vapid_private_key: env_str("VAPID_PRIVATE_KEY").unwrap_or_default(),
             vapid_contact: env_str("VAPID_CONTACT").unwrap_or_else(|| "mailto:admin@localhost".into()),
             vapid_keys_file: base.join("vapid_keys.json"),
+            ice_public_ip: env_str("ICE_PUBLIC_IP"),
+            rtc_port_min: env_int("RTC_PORT_MIN", 50000u16),
+            rtc_port_max: env_int("RTC_PORT_MAX", 50100u16),
         };
 
         tracing::info!(config = %env_name, domain = %cfg.domain, port = cfg.port,
