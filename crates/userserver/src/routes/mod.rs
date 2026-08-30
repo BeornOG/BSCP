@@ -5,6 +5,7 @@ pub mod chats;
 pub mod federation;
 pub mod invites;
 pub mod misc;
+pub mod oidc;
 pub mod uploads;
 pub mod users;
 pub mod webhooks;
@@ -28,6 +29,7 @@ pub fn build(state: AppState) -> Router {
         .merge(admin::router())
         .merge(federation::router())
         .merge(calls::router())
+        .merge(oidc::router())
         .merge(misc::router());
 
     #[cfg(debug_assertions)]

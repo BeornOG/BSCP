@@ -28,9 +28,13 @@ async fn server() -> TestServer {
         vapid_private_key: String::new(),
         vapid_contact: "mailto:test@localhost".into(),
         vapid_keys_file: dir.join("vapid.json"),
+        oidc_keys_file: dir.join("oidc.json"),
         ice_public_ip: None,
         rtc_port_min: 0,
         rtc_port_max: 0,
+        public_url: "http://localhost:5000".into(),
+        oidc_access_ttl: 3600,
+        oidc_refresh_ttl: 2_592_000,
     };
     std::fs::create_dir_all(&cfg.cache_dir).unwrap();
     std::fs::create_dir_all(&cfg.upload_dir).unwrap();
@@ -42,7 +46,7 @@ async fn server() -> TestServer {
         .unwrap();
     bscp_userserver::MIGRATOR.run(&pool).await.unwrap();
 
-    let state = bscp_userserver::make_state(cfg, pool);
+    let state = bscp_userserver::make_state(cfg, pool).unwrap();
     TestServer { app: bscp_userserver::routes::build(state) }
 }
 

@@ -33,6 +33,10 @@ utoipa-swagger-ui.workspace = true
 tokio-tungstenite.workspace = true
 webrtc.workspace = true
 futures-util.workspace = true
+jsonwebtoken.workspace = true
+rsa.workspace = true
+rand.workspace = true
+hmac.workspace = true
 
 [dev-dependencies]
 tower = { workspace = true, features = ["util"] }

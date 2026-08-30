@@ -4,6 +4,8 @@
 pub mod auth;
 pub mod call;
 pub mod media;
+pub mod modules;
+pub mod oidc;
 #[cfg(debug_assertions)]
 pub mod openapi;
 pub mod profile;
@@ -22,23 +24,26 @@ use std::sync::Arc;
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 /// Build the fully-wired application state from a config and an open pool.
-pub fn make_state(cfg: UserServerConfig, pool: SqlitePool) -> AppState {
+pub fn make_state(cfg: UserServerConfig, pool: SqlitePool) -> anyhow::Result<AppState> {
     let vapid = bscp_common::push::load_or_generate(
         &cfg.vapid_private_key,
         &cfg.vapid_public_key,
         &cfg.vapid_contact,
         &cfg.vapid_keys_file,
     );
+    let oidc = Arc::new(oidc::OidcKeys::load_or_generate(&cfg.oidc_keys_file)?);
     let cookie_key = derive_cookie_key(&cfg.secret_key);
     let calls = Arc::new(call::CallState::new(cfg.domain.clone()));
-    AppState {
+    Ok(AppState {
         pool,
         cfg: Arc::new(cfg),
         discovery: Arc::new(Discovery::new()),
         vapid: Arc::new(vapid),
         cookie_key,
         calls,
-    }
+        oidc,
+        modules: Arc::new(modules::ModuleBus::new()),
+    })
 }
 
 /// Entry point used by the binary.
@@ -60,7 +65,8 @@ pub async fn run() -> anyhow::Result<()> {
     let pool = bscp_common::db::connect(&cfg.database_url()).await?;
     MIGRATOR.run(&pool).await?;
 
-    let state = make_state(cfg, pool);
+    let state = make_state(cfg, pool)?;
+    state.modules.reload(&state.pool).await;
     tasks::spawn_cache_cleanup(state.cfg.clone());
 
     let app = routes::build(state);

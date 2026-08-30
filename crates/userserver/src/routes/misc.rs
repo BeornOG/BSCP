@@ -120,9 +120,13 @@ async fn serve_upload(State(state): State<AppState>, Path(filename): Path<String
 // ── GET /.well-known/BSCP/userserver ───────────────────────────────────
 
 async fn wellknown(State(state): State<AppState>) -> impl IntoResponse {
-    let base = format!("http://{}", state.domain());
+    let base = state.cfg.public_url.clone();
     Json(json!({
         "server": { "name": "BSCP User Server", "version": "1.0", "type": "userserver" },
+        "oidc": {
+            "issuer": base,
+            "configuration": format!("{base}/.well-known/openid-configuration"),
+        },
         "api": {
             "base": base,
             "docs": "/api/docs/",
@@ -149,7 +153,8 @@ async fn wellknown(State(state): State<AppState>) -> impl IntoResponse {
             "channels": false,
             "direct_messaging": true,
             "media_upload": true,
-            "webhooks": true
+            "webhooks": true,
+            "oidc": true
         }
     }))
 }

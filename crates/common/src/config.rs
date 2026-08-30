@@ -17,11 +17,19 @@ pub struct UserServerConfig {
     pub vapid_contact: String,
     /// Path where an auto-generated VAPID keypair is persisted.
     pub vapid_keys_file: PathBuf,
+    /// Path where the auto-generated OIDC RSA signing key is persisted.
+    pub oidc_keys_file: PathBuf,
     /// Public IP advertised for WebRTC ICE (1:1 NAT). Falls back to host candidates.
     pub ice_public_ip: Option<String>,
     /// UDP port range for WebRTC media (open these on the firewall).
     pub rtc_port_min: u16,
     pub rtc_port_max: u16,
+    /// Externally reachable base URL (scheme + host), used as the OIDC issuer and
+    /// for absolute redirects. `PUBLIC_URL`; defaults from `domain`.
+    pub public_url: String,
+    /// OIDC token lifetimes, seconds.
+    pub oidc_access_ttl: u64,
+    pub oidc_refresh_ttl: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -98,6 +106,17 @@ fn resolve_path(base: &Path, value: &str) -> PathBuf {
     if p.is_absolute() { p } else { base.join(p) }
 }
 
+/// `https://{domain}`, or `http://` for obvious localhost/loopback domains.
+fn default_public_url(domain: &str) -> String {
+    let host = domain.split(&['/', '@'][..]).next().unwrap_or(domain);
+    let is_local = host.starts_with("localhost")
+        || host.starts_with("127.")
+        || host.starts_with("[::1]")
+        || host == "0.0.0.0";
+    let scheme = if is_local { "http" } else { "https" };
+    format!("{scheme}://{domain}")
+}
+
 fn ensure_parent_dir(path: &Path) {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
@@ -126,6 +145,8 @@ impl UserServerConfig {
         let _ = std::fs::create_dir_all(&cache_dir);
         let _ = std::fs::create_dir_all(&upload_dir);
 
+        let public_url = env_str("PUBLIC_URL").unwrap_or_else(|| default_public_url(&domain));
+
         let cfg = UserServerConfig {
             port,
             domain,
@@ -139,9 +160,13 @@ impl UserServerConfig {
             vapid_private_key: env_str("VAPID_PRIVATE_KEY").unwrap_or_default(),
             vapid_contact: env_str("VAPID_CONTACT").unwrap_or_else(|| "mailto:admin@localhost".into()),
             vapid_keys_file: base.join("vapid_keys.json"),
+            oidc_keys_file: base.join("oidc_keys.json"),
             ice_public_ip: env_str("ICE_PUBLIC_IP"),
             rtc_port_min: env_int("RTC_PORT_MIN", 50000u16),
             rtc_port_max: env_int("RTC_PORT_MAX", 50100u16),
+            public_url,
+            oidc_access_ttl: env_int("OIDC_ACCESS_TTL", 3600u64),
+            oidc_refresh_ttl: env_int("OIDC_REFRESH_TTL", 2_592_000u64),
         };
 
         tracing::info!(config = %env_name, domain = %cfg.domain, port = cfg.port,

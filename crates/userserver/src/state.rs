@@ -1,4 +1,6 @@
 use crate::call::CallState;
+use crate::modules::ModuleBus;
+use crate::oidc::OidcKeys;
 use axum::extract::FromRef;
 use axum_extra::extract::cookie::Key;
 use bscp_common::config::UserServerConfig;
@@ -15,6 +17,8 @@ pub struct AppState {
     pub vapid: Arc<Vapid>,
     pub cookie_key: Key,
     pub calls: Arc<CallState>,
+    pub oidc: Arc<OidcKeys>,
+    pub modules: Arc<ModuleBus>,
 }
 
 impl AppState {

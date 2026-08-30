@@ -41,7 +41,19 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 utoipa = { version = "5", features = ["axum_extras", "chrono"] }
 utoipa-swagger-ui = { version = "8", features = ["axum"] }
+jsonwebtoken = "9"
+rsa = { version = "0.9", features = ["pem"] }
 
 [profile.release]
 strip = true
 lto = "thin"
+
+# Crypto keygen is painfully slow in an unoptimised build — optimise just these.
+[profile.dev.package.rsa]
+opt-level = 3
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+[profile.dev.package.crypto-bigint]
+opt-level = 3
+[profile.dev.package.p256]
+opt-level = 3
