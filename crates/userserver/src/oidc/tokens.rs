@@ -131,7 +131,12 @@ pub async fn issue_tokens(
 
     let access = store_token(state, "access", client_id, &user.id, scope, access_ttl).await?;
     let refresh = store_token(state, "refresh", client_id, &user.id, scope, refresh_ttl).await?;
-    let id_token = build_id_token(state, client_id, user, scope, nonce, auth_time)?;
+    let links = if scope_has(scope, "bscp:links") {
+        Some(crate::modules::links::links_claim(state, &user.id).await)
+    } else {
+        None
+    };
+    let id_token = build_id_token(state, client_id, user, scope, nonce, auth_time, links)?;
 
     Ok(TokenSet {
         access,
@@ -203,6 +208,7 @@ pub async fn revoke(state: &AppState, token: &str) -> Result<(), ApiError> {
 
 // ── ID token ─────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn build_id_token(
     state: &AppState,
     client_id: &str,
@@ -210,6 +216,7 @@ fn build_id_token(
     scope: &str,
     nonce: Option<&str>,
     auth_time: f64,
+    links: Option<Value>,
 ) -> Result<String, ApiError> {
     let now = now_ts() as i64;
     let mut claims: Map<String, Value> = Map::new();
@@ -223,6 +230,9 @@ fn build_id_token(
         claims.insert("nonce".into(), json!(n));
     }
     add_profile_claims(&mut claims, state, user, scope);
+    if let Some(links) = links {
+        claims.insert("bscp_links".into(), links);
+    }
 
     state.oidc.sign(&Value::Object(claims)).map_err(|e| ApiError::internal(format!("id_token: {e}")))
 }

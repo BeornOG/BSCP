@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useUsers, useInvites, useGenerateInvite, useDeleteUser } from '../hooks/useAdmin';
 import { useUpdateUserStorageLimit } from '../hooks/useUserStorageConfig';
+import { useOAuthConfig, useSetOAuthEnabled, useOAuthClients, useRevokeOAuthClient } from '../hooks/useOAuthApps';
+import { useModules, useAddModule, useSetModuleEnabled, useRemoveModule, type AddModuleResult } from '../hooks/useModules';
 import { Card, CardHeader, CardContent, Button, Badge, Spinner, Input } from '../components/ui';
 
 export default function AdminPage() {
@@ -12,6 +14,28 @@ export default function AdminPage() {
 
   const [selectedUsername, setSelectedUsername] = useState<string | null>(null);
   const [storageInput, setStorageInput] = useState('');
+
+  const oauthConfig = useOAuthConfig();
+  const setOAuthEnabled = useSetOAuthEnabled();
+  const { data: oauthClients } = useOAuthClients();
+  const revokeClient = useRevokeOAuthClient();
+
+  const { data: modules } = useModules();
+  const addModule = useAddModule();
+  const setModuleEnabled = useSetModuleEnabled();
+  const removeModule = useRemoveModule();
+  const [moduleUrl, setModuleUrl] = useState('');
+  const [newModule, setNewModule] = useState<AddModuleResult | null>(null);
+
+  const handleAddModule = () => {
+    if (!moduleUrl.trim()) return;
+    addModule.mutate(moduleUrl.trim(), {
+      onSuccess: (res) => {
+        setNewModule(res);
+        setModuleUrl('');
+      },
+    });
+  };
 
   const selectedUser = selectedUsername ? users?.find(u => u.username === selectedUsername) : null;
 
@@ -144,6 +168,142 @@ export default function AdminPage() {
               </tbody>
             </table>
           )}
+        </CardContent>
+      </Card>
+
+      {/* OAuth Applications */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between w-full">
+            <h2 className="text-lg font-medium text-[#e8eaed]">OAuth Applications</h2>
+            <label className="flex items-center gap-2 text-sm text-[#71747a]">
+              <input
+                type="checkbox"
+                checked={oauthConfig.data?.oidc_enabled ?? true}
+                onChange={(e) => setOAuthEnabled.mutate(e.target.checked)}
+              />
+              Sign in with BSCP enabled
+            </label>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[#71747a]">
+                <th className="pb-3 font-medium">Name</th>
+                <th className="pb-3 font-medium">Client ID</th>
+                <th className="pb-3 font-medium">Redirect URIs</th>
+                <th className="pb-3 font-medium text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {oauthClients?.map((c) => (
+                <tr key={c.client_id} className="border-b border-[#232529] last:border-0">
+                  <td className="py-3 text-[#e8eaed]">{c.name || '—'}</td>
+                  <td className="py-3 font-mono text-xs text-[#71747a]">{c.client_id}</td>
+                  <td className="py-3 text-xs text-[#71747a] break-all">{c.redirect_uris.join(', ')}</td>
+                  <td className="py-3 text-right">
+                    <button
+                      onClick={() => revokeClient.mutate(c.client_id)}
+                      className="text-red-400 hover:text-red-300 text-xs"
+                    >
+                      Revoke
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {(!oauthClients || oauthClients.length === 0) && (
+                <tr>
+                  <td colSpan={4} className="py-6 text-center text-[#71747a]">
+                    No applications have registered yet
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+
+      {/* Modules */}
+      <Card>
+        <CardHeader>
+          <h2 className="text-lg font-medium text-[#e8eaed]">Modules</h2>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-2 mb-4">
+            <Input
+              placeholder="https://module.example"
+              value={moduleUrl}
+              onChange={(e) => setModuleUrl(e.target.value)}
+            />
+            <Button onClick={handleAddModule} disabled={addModule.isPending}>
+              {addModule.isPending ? 'Adding…' : 'Add'}
+            </Button>
+          </div>
+          {addModule.isError && (
+            <p className="text-sm text-red-400 mb-3">{(addModule.error as Error).message}</p>
+          )}
+          {newModule && (
+            <div className="mb-4 rounded-md bg-[#1a1d21] border border-[#232529] p-3 text-sm">
+              <p className="text-[#e8eaed] font-medium">{newModule.name} added.</p>
+              <p className="text-[#71747a] mt-1">
+                Shared secret (shown once — configure it in the module):
+              </p>
+              <code className="block mt-1 break-all text-[#7eafff]">{newModule.secret}</code>
+              {newModule.events.length > 0 && (
+                <p className="text-[#71747a] mt-2">
+                  Will receive events: {newModule.events.join(', ')}
+                </p>
+              )}
+              <button onClick={() => setNewModule(null)} className="text-xs text-[#71747a] mt-2 underline">
+                dismiss
+              </button>
+            </div>
+          )}
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[#71747a]">
+                <th className="pb-3 font-medium">Name</th>
+                <th className="pb-3 font-medium">URL</th>
+                <th className="pb-3 font-medium">Events / Providers</th>
+                <th className="pb-3 font-medium text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {modules?.map((m) => (
+                <tr key={m.name} className="border-b border-[#232529] last:border-0">
+                  <td className="py-3 text-[#e8eaed]">{m.name}</td>
+                  <td className="py-3 text-xs text-[#71747a] break-all">{m.base_url}</td>
+                  <td className="py-3 text-xs text-[#71747a]">
+                    {m.manifest.events.join(', ')}
+                    {m.manifest.link_providers.length > 0 &&
+                      ` · links: ${m.manifest.link_providers.map((p) => p.name || p.id).join(', ')}`}
+                  </td>
+                  <td className="py-3 text-right space-x-2">
+                    <button
+                      onClick={() => setModuleEnabled.mutate({ name: m.name, enabled: !m.enabled })}
+                      className="text-blue-400 hover:text-blue-300 text-xs"
+                    >
+                      {m.enabled ? 'Disable' : 'Enable'}
+                    </button>
+                    <button
+                      onClick={() => removeModule.mutate(m.name)}
+                      className="text-red-400 hover:text-red-300 text-xs"
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {(!modules || modules.length === 0) && (
+                <tr>
+                  <td colSpan={4} className="py-6 text-center text-[#71747a]">
+                    No modules installed
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </CardContent>
       </Card>
 

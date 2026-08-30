@@ -6,6 +6,7 @@ import { useLogout } from '../hooks/useAuth';
 import { Avatar, Button, Input, Spinner } from '../components/ui';
 import MediaManager from '../components/settings/MediaManager';
 import StorageSettings from '../components/settings/StorageSettings';
+import Connections from '../components/settings/Connections';
 
 const ACCENT_COLORS = ['#6e8efb', '#ff716c', '#e9caf0', '#4d3755', '#28a745'];
 
@@ -322,6 +323,8 @@ export default function SettingsPage() {
           </div>
         )}
       </section>
+
+      <Connections />
 
       {/* Webhooks Section */}
       <section className="space-y-4">

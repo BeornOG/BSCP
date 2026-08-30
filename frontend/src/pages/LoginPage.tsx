@@ -13,6 +13,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
+  const nextParam = new URLSearchParams(window.location.search).get('next');
+  const safeNext = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : null;
+
   if (isLoading) return null;
 
   if (auth?.needsSetup) {
@@ -28,9 +31,10 @@ export default function LoginPage() {
       {
         onSuccess: (data) => {
           if (data.success) {
-            navigate('/');
+            if (safeNext) window.location.assign(safeNext);
+            else navigate('/');
           } else if (data.requires_2fa) {
-            navigate('/login/2fa');
+            navigate('/login/2fa' + (safeNext ? `?next=${encodeURIComponent(safeNext)}` : ''));
           } else {
             setError(data.error || 'Invalid username or password.');
           }

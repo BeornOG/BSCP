@@ -11,6 +11,9 @@ export default function TwoFactorPage() {
   const [otp, setOtp] = useState('');
   const [error, setError] = useState('');
 
+  const nextParam = new URLSearchParams(window.location.search).get('next');
+  const safeNext = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : null;
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
@@ -20,7 +23,8 @@ export default function TwoFactorPage() {
       {
         onSuccess: (data) => {
           if (data.success) {
-            navigate('/');
+            if (safeNext) window.location.assign(safeNext);
+            else navigate('/');
           } else {
             setError(data.error || 'Invalid code');
           }

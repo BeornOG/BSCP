@@ -22,6 +22,46 @@ Config: `ICE_PUBLIC_IP` (this server's public IP for 1:1 NAT) and `RTC_PORT_MIN`
 (the UDP range to open). No external STUN/TURN is needed as long as the user servers are
 mutually reachable (which federation already requires).
 
+## Sign in with BSCP (OIDC)
+
+Every user server is its own **OpenID Connect provider** — there is no central issuer. An app
+lets the user type `alice@alice.example`, discovers that server through
+`/.well-known/BSCP/userserver` (the new `oidc` block → `/.well-known/openid-configuration`),
+and runs a standard auth-code + PKCE flow against it. The server only ever authenticates its
+**own local users** (via the session cookie), so `sub` is always `localuser@thisdomain`;
+cross-domain identity is the relying party's job.
+
+Relying parties become trusted in one of two ways:
+
+- **Dynamic registration** — `POST /oauth/register` (RFC 7591), once per home-server domain.
+- **Federation trust** — an unregistered `client_id` that is an `https://` origin is accepted
+  if `<client_id>/.well-known/BSCP/relying-party` lists the exact `redirect_uri`
+  (`{ "client_name", "redirect_uris": [...] }`). PKCE required, no secret, consent always shown.
+
+Endpoints: `/.well-known/openid-configuration`, `/oauth/jwks` (RS256), `/oauth/register`,
+`/oauth/authorize` (+ a server-rendered consent page), `/oauth/token`, `/oauth/userinfo`,
+`/oauth/revoke`. Config: `PUBLIC_URL` (the externally reachable base URL — the issuer;
+defaults from `DOMAIN`), `OIDC_ACCESS_TTL`, `OIDC_REFRESH_TTL`. The signing key is generated
+once into `oidc_keys.json`. Admins can disable the provider or revoke clients in the admin
+panel.
+
+## Modules
+
+Server owners can install **out-of-process modules** — separate HTTP services registered in
+the admin panel by base URL (the server generates a shared secret and fetches the module's
+`/.well-known/bscp-module` manifest). A module:
+
+- receives **signed event webhooks** (`X-BSCP-Signature: sha256=<hmac>`) for the events it
+  subscribed to: `user.registered`, `user.deleted`, `session.created`, `message.sent`,
+  `message.received`, `webhook.received` (message events include content — shown at install);
+- can offer **external account linking**: it declares `link_providers` (e.g. GitHub); the
+  user clicks *Connect* under Settings → Connections, the server hands the module a signed
+  ticket, the module runs its own OAuth and calls back `POST /api/modules/<name>/links`
+  (module-signed) to record the link. Linked accounts appear on the profile and, with the
+  `bscp:links` scope, in OIDC `userinfo`.
+
+Modules get no routes into the user server and no injected SPA UI.
+
 ## Prerequisites
 
 - **Rust 1.97+** (`rustup`), for building the servers
@@ -64,6 +104,9 @@ The backend is a Cargo workspace with three crates:
    CACHE_TIME=86400
    UPLOAD_DIR=uploads
    SECRET_KEY=change-me
+
+   # OIDC issuer / absolute redirects. Defaults to https://DOMAIN (http:// for localhost).
+   PUBLIC_URL=https://alice.example
 
    # Voice calls (WebRTC). Optional in dev; required for calls across NAT.
    ICE_PUBLIC_IP=203.0.113.10   # this server's public IP (1:1 NAT)
