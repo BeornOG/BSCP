@@ -103,6 +103,14 @@ async fn receive(State(state): State<AppState>, Json(data): Json<IncomingMessage
         }
     }
 
+    crate::modules::dispatch(
+        &state,
+        "message.received",
+        serde_json::json!({
+            "id": data.id, "sender": data.sender, "receiver": data.receiver, "kind": kind, "text": data.text,
+        }),
+    );
+
     (StatusCode::OK, "OK").into_response()
 }
 

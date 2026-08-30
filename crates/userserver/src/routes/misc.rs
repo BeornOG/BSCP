@@ -92,6 +92,12 @@ async fn receive_webhook(
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "insert failed" }))).into_response();
     }
 
+    crate::modules::dispatch(
+        &state,
+        "webhook.received",
+        json!({ "webhook_id": webhook.id, "receiver": receiver, "text": content }),
+    );
+
     let (pool, vapid, disc) = (state.pool.clone(), state.vapid.clone(), state.discovery.clone());
     let (title, body) = (format!("Message from {}", webhook.name), content.clone());
     tokio::spawn(async move {

@@ -292,6 +292,7 @@ async fn delete_user(
 
     sqlx::query("UPDATE users SET is_deleted = 1 WHERE id = ?").bind(&user.id).execute(&state.pool).await?;
     sqlx::query("DELETE FROM user_sessions WHERE user_id = ?").bind(&user.id).execute(&state.pool).await?;
+    crate::modules::dispatch(&state, "user.deleted", json!({ "user": state.full_id(&user.username) }));
     Ok(Json(json!({ "message": format!("User {} has been deactivated.", user.username) })))
 }
 

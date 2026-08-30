@@ -62,6 +62,12 @@ async fn create_session(
     .execute(&state.pool)
     .await?;
 
+    crate::modules::dispatch(
+        state,
+        "session.created",
+        serde_json::json!({ "user": state.full_id(&user.username), "device_info": device_info }),
+    );
+
     let mut jar = clear_session(jar);
     jar = set_cookie(jar, SESSION_COOKIE, token.clone());
     Ok((jar, token))
@@ -289,6 +295,12 @@ async fn register(
         .bind(invite.id)
         .execute(&state.pool)
         .await?;
+
+    crate::modules::dispatch(
+        &state,
+        "user.registered",
+        json!({ "user": state.full_id(&username), "username": username, "created_at": now_ts() }),
+    );
 
     Ok((StatusCode::CREATED, Json(json!({ "success": true }))))
 }

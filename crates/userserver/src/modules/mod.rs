@@ -96,6 +96,10 @@ impl ModuleBus {
         self.cache.read().unwrap().iter().filter(|m| m.enabled).cloned().collect()
     }
 
+    pub fn enabled_and_disabled(&self) -> Vec<Module> {
+        self.cache.read().unwrap().clone()
+    }
+
     pub fn get(&self, name: &str) -> Option<Module> {
         self.cache.read().unwrap().iter().find(|m| m.name == name).cloned()
     }

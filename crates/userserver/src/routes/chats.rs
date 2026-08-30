@@ -266,6 +266,12 @@ pub(crate) async fn store_and_deliver(
     .execute(&state.pool)
     .await?;
 
+    crate::modules::dispatch(
+        state,
+        "message.sent",
+        json!({ "id": full_id, "sender": out.sender, "receiver": out.receiver, "kind": out.kind, "text": out.text }),
+    );
+
     // Local push (background).
     if let Some(from) = push_from_username {
         if let Some(local) = out.receiver.strip_suffix(&format!("@{}", state.domain())) {
