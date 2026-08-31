@@ -32,20 +32,15 @@ export default function AppLayout({ children }: AppLayoutProps) {
     initAudioContext();
   }, []);
 
-  const allNavItems = isAdmin
-    ? [...navItems, { path: "/admin", icon: "admin_panel_settings", label: "Admin" }]
-    : navItems;
-
   return (
     <CallProvider>
     <div className="flex h-screen bg-[#0a0a0b]">
       <IncomingCallModal />
-      <GuildRail />
       <nav className="w-16 flex flex-col items-center py-4 border-r border-[#232529] bg-[#0a0a0b]">
-        <span className="text-xl font-bold text-[var(--accent)] mb-8">A.</span>
+        <span className="text-xl font-bold text-[var(--accent)] mb-6">A.</span>
 
-        <div className="flex-1 flex flex-col items-center gap-2">
-          {allNavItems.map((item) => (
+        <div className="flex-1 w-full flex flex-col items-center gap-2 overflow-y-auto">
+          {navItems.map((item) => (
             <div key={item.path} className="relative">
               <NavLink
                 to={item.path}
@@ -59,9 +54,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 }
                 title={item.label}
               >
-                <span className="material-symbols-outlined text-[20px]">
-                  {item.icon}
-                </span>
+                <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
               </NavLink>
               {item.path === "/" && totalUnread > 0 && (
                 <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center">
@@ -70,6 +63,26 @@ export default function AppLayout({ children }: AppLayoutProps) {
               )}
             </div>
           ))}
+
+          <div className="w-8 h-px bg-[#232529] my-1" />
+          <GuildRail />
+          <div className="w-8 h-px bg-[#232529] my-1" />
+
+          {isAdmin && (
+            <NavLink
+              to="/admin"
+              className={({ isActive }) =>
+                `w-10 h-10 flex items-center justify-center rounded-xl transition-colors ${
+                  isActive
+                    ? "bg-[#232529] text-[#e8eaed]"
+                    : "text-[#71747a] hover:text-[#e8eaed] hover:bg-[#232529]/50"
+                }`
+              }
+              title="Admin"
+            >
+              <span className="material-symbols-outlined text-[20px]">admin_panel_settings</span>
+            </NavLink>
+          )}
         </div>
 
         <div className="flex flex-col items-center gap-3">

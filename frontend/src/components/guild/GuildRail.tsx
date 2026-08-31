@@ -8,17 +8,17 @@ export default function GuildRail() {
   const [mode, setMode] = useState<null | 'create' | 'join'>(null);
 
   return (
-    <div className="w-16 flex flex-col items-center gap-2 py-3 border-r border-[#232529] bg-[#050506]">
+    <>
       {(guilds ?? []).map((g) => (
         <NavLink
           key={`${g.channel_server}/${g.guild_id}`}
           to={`/g/${g.channel_server}/${g.guild_id}`}
           title={g.name ?? g.guild_id}
           className={({ isActive }) =>
-            `w-11 h-11 rounded-2xl flex items-center justify-center text-sm font-semibold overflow-hidden transition-all ${
+            `w-10 h-10 rounded-xl flex items-center justify-center text-xs font-semibold overflow-hidden transition-colors ${
               isActive
-                ? 'bg-[var(--accent)] text-white rounded-xl'
-                : 'bg-[#1a1d21] text-[#c7c9cd] hover:rounded-xl hover:bg-[var(--accent)]/70'
+                ? 'bg-[var(--accent)] text-white'
+                : 'bg-[#1a1d21] text-[#c7c9cd] hover:bg-[var(--accent)]/70'
             }`
           }
         >
@@ -33,13 +33,13 @@ export default function GuildRail() {
       <div className="relative">
         <button
           onClick={() => setMenu((m) => !m)}
-          className="w-11 h-11 rounded-2xl bg-[#1a1d21] text-green-400 text-xl hover:rounded-xl hover:bg-green-600 hover:text-white"
+          className="w-10 h-10 rounded-xl bg-[#1a1d21] text-green-400 text-lg hover:bg-green-600 hover:text-white"
           title="Add a guild"
         >
           +
         </button>
         {menu && (
-          <div className="absolute left-14 top-0 z-20 w-40 rounded-lg bg-[#151517] border border-[#232529] p-1 text-sm">
+          <div className="absolute left-12 top-0 z-20 w-40 rounded-lg bg-[#151517] border border-[#232529] p-1 text-sm">
             <button
               className="w-full text-left px-3 py-2 rounded hover:bg-[#232529]"
               onClick={() => {
@@ -63,7 +63,7 @@ export default function GuildRail() {
       </div>
 
       {mode && <GuildDialog mode={mode} onClose={() => setMode(null)} />}
-    </div>
+    </>
   );
 }
 
