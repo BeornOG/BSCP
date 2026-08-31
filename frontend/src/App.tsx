@@ -7,6 +7,8 @@ import TwoFactorPage from './pages/TwoFactorPage'
 import AdminPage from './pages/AdminPage'
 import ChatPage from './pages/ChatPage'
 import SettingsPage from './pages/SettingsPage'
+import GuildPage from './pages/GuildPage'
+import JoinGuildPage from './pages/JoinGuildPage'
 
 function App() {
   return (
@@ -21,6 +23,9 @@ function App() {
       <Route path="/" element={<AppLayout><ChatPage /></AppLayout>} />
       <Route path="/admin" element={<AppLayout><AdminPage /></AppLayout>} />
       <Route path="/settings" element={<AppLayout><SettingsPage /></AppLayout>} />
+      <Route path="/join" element={<AppLayout><JoinGuildPage /></AppLayout>} />
+      <Route path="/g/:cs/:gid" element={<AppLayout><GuildPage /></AppLayout>} />
+      <Route path="/g/:cs/:gid/:cid" element={<AppLayout><GuildPage /></AppLayout>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

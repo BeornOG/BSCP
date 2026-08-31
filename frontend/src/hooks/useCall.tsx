@@ -22,14 +22,19 @@ interface CallCtx {
   incoming: IncomingCall | null;
   muted: boolean;
   error: string | null;
+  /** id of the voice channel currently joined, if any */
+  voiceChannel: string | null;
   startCall: (peerFullId: string) => void;
   accept: () => void;
   reject: () => void;
   hangup: () => void;
   toggleMute: () => void;
+  joinRoom: (channelServer: string, channelId: string) => void;
+  leaveRoom: () => void;
 }
 
 const Ctx = createContext<CallCtx | null>(null);
+// eslint-disable-next-line react-refresh/only-export-components
 export const useCall = () => {
   const c = useContext(Ctx);
   if (!c) throw new Error('useCall outside CallProvider');
@@ -47,6 +52,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [incoming, setIncoming] = useState<IncomingCall | null>(null);
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [voiceChannel, setVoiceChannel] = useState<string | null>(null);
 
   const ws = useRef<WebSocket | null>(null);
   const pc = useRef<RTCPeerConnection | null>(null);
@@ -56,7 +62,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const negotiated = useRef(false);
 
   const send = useCallback((msg: unknown) => {
-    ws.current?.readyState === WebSocket.OPEN && ws.current.send(JSON.stringify(msg));
+    if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify(msg));
   }, []);
 
   const cleanup = useCallback(() => {
@@ -70,6 +76,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setStatus('idle');
     setPeers([]);
     setMuted(false);
+    setVoiceChannel(null);
   }, []);
 
   const negotiate = useCallback(async () => {
@@ -219,8 +226,30 @@ export function CallProvider({ children }: { children: ReactNode }) {
     if (callId.current) send({ type: 'mute', call_id: callId.current, muted: next });
   }, [muted, send]);
 
+  const joinRoom = useCallback(
+    (channelServer: string, channelId: string) => {
+      setError(null);
+      callId.current = null;
+      negotiated.current = false;
+      setVoiceChannel(channelId);
+      setStatus('connecting');
+      send({ type: 'join_room', channel_server: channelServer, channel_id: channelId });
+    },
+    [send],
+  );
+
+  const leaveRoom = useCallback(() => {
+    send({ type: 'leave', call_id: '' });
+    cleanup();
+  }, [send, cleanup]);
+
   return (
-    <Ctx.Provider value={{ status, peers, incoming, muted, error, startCall, accept, reject, hangup, toggleMute }}>
+    <Ctx.Provider
+      value={{
+        status, peers, incoming, muted, error, voiceChannel,
+        startCall, accept, reject, hangup, toggleMute, joinRoom, leaveRoom,
+      }}
+    >
       {children}
       <audio ref={audioEl} autoPlay hidden />
     </Ctx.Provider>

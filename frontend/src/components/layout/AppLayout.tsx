@@ -8,6 +8,7 @@ import { usePushNotifications, useMessageNotifications, initAudioContext } from 
 import { useChats } from "../../hooks/useChats";
 import { CallProvider } from "../../hooks/useCall";
 import IncomingCallModal from "../call/IncomingCallModal";
+import GuildRail from "../guild/GuildRail";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -39,6 +40,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
     <CallProvider>
     <div className="flex h-screen bg-[#0a0a0b]">
       <IncomingCallModal />
+      <GuildRail />
       <nav className="w-16 flex flex-col items-center py-4 border-r border-[#232529] bg-[#0a0a0b]">
         <span className="text-xl font-bold text-[var(--accent)] mb-8">A.</span>
 
