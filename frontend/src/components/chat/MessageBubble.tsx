@@ -45,6 +45,12 @@ function preprocessMarkdown(text: string): string {
     '<video controls style="max-width: 100%; border-radius: 0.5rem; margin: 0.25rem 0;"><source src="$1"></video> '
   );
 
+  // Convert bare audio file URLs to <audio> tags
+  text = text.replace(
+    /\b((?:https?:)?\/\/[^\s]+\.(?:mp3|wav|flac|aac|m4a)|\/[^\s]+\.(?:mp3|wav|flac|aac|m4a))(?:\s|$)/gi,
+    '<audio controls style="max-width: 100%; margin: 0.25rem 0;"><source src="$1"></audio> '
+  );
+
   return text;
 }
 
@@ -57,11 +63,34 @@ function proxyImages(html: string): string {
   );
 }
 
-/** Full render pipeline: preprocess -> marked -> proxy images */
+/**
+ * Turn plain links to uploaded files (`.../uploads/<name>`) into a compact
+ * download card instead of a bare hyperlink, so non-media attachments
+ * (PDFs, archives, docs, …) still look like attachments. See issues #15/#17.
+ */
+function decorateFileLinks(html: string): string {
+  return html.replace(
+    /<a href="([^"]*\/uploads\/([^"]+))">([^<]*)<\/a>/g,
+    (_m, href: string, stored: string, label: string) => {
+      const name = label && label !== href ? label : decodeURIComponent(stored.replace(/^[0-9a-f-]{36}_/i, ''));
+      return (
+        `<a href="${href}" target="_blank" rel="noopener noreferrer" download ` +
+        `style="display:inline-flex;align-items:center;gap:0.5rem;max-width:100%;` +
+        `padding:0.5rem 0.75rem;margin:0.25rem 0;border-radius:0.5rem;` +
+        `background:rgba(255,255,255,0.06);text-decoration:none;">` +
+        `<span class="material-symbols-outlined" style="font-size:20px;flex-shrink:0;">attach_file</span>` +
+        `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</span>` +
+        `</a>`
+      );
+    }
+  );
+}
+
+/** Full render pipeline: preprocess -> marked -> proxy images -> file cards */
 export function renderMarkdown(text: string): string {
   const preprocessed = preprocessMarkdown(text);
   const html = marked.parse(preprocessed, { async: false }) as string;
-  return proxyImages(html);
+  return decorateFileLinks(proxyImages(html));
 }
 
 const MessageBubble: FC<MessageBubbleProps> = ({
