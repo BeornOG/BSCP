@@ -2,10 +2,11 @@
 //! persisted next to the other server key files.
 
 use base64::Engine as _;
-use jsonwebtoken::{Algorithm, EncodingKey, Header};
-use rsa::pkcs1::{DecodeRsaPrivateKey, EncodeRsaPrivateKey, LineEnding};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use rsa::pkcs1::{DecodeRsaPrivateKey, EncodeRsaPrivateKey, EncodeRsaPublicKey, LineEnding};
 use rsa::traits::PublicKeyParts;
 use rsa::RsaPrivateKey;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::Path;
@@ -21,6 +22,7 @@ struct KeyFile {
 pub struct OidcKeys {
     pub kid: String,
     encoding: EncodingKey,
+    decoding: DecodingKey,
     jwk_n: String,
     jwk_e: String,
 }
@@ -49,9 +51,12 @@ impl OidcKeys {
     fn from_parts(kid: String, pkcs1_pem: String, key: &RsaPrivateKey) -> anyhow::Result<Self> {
         let encoding = EncodingKey::from_rsa_pem(pkcs1_pem.as_bytes())?;
         let pubk = key.to_public_key();
+        let pub_pem = pubk.to_pkcs1_pem(LineEnding::LF)?;
+        let decoding = DecodingKey::from_rsa_pem(pub_pem.as_bytes())?;
         Ok(Self {
             kid,
             encoding,
+            decoding,
             jwk_n: B64.encode(pubk.n().to_bytes_be()),
             jwk_e: B64.encode(pubk.e().to_bytes_be()),
         })
@@ -61,6 +66,17 @@ impl OidcKeys {
         let mut header = Header::new(Algorithm::RS256);
         header.kid = Some(self.kid.clone());
         Ok(jsonwebtoken::encode(&header, claims, &self.encoding)?)
+    }
+
+    /// Verify a token this server signed (RS256 + `exp`); `aud` optionally checked.
+    pub fn verify<T: DeserializeOwned>(&self, token: &str, aud: Option<&str>) -> anyhow::Result<T> {
+        let mut v = Validation::new(Algorithm::RS256);
+        v.set_required_spec_claims(&["exp"]);
+        match aud {
+            Some(a) => v.set_audience(&[a]),
+            None => v.validate_aud = false,
+        }
+        Ok(jsonwebtoken::decode::<T>(token, &self.decoding, &v)?.claims)
     }
 
     pub fn jwks(&self) -> Value {

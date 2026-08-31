@@ -151,6 +151,7 @@ async fn wellknown(State(state): State<AppState>) -> impl IntoResponse {
                 "webhooks": "/api/user/webhooks",
                 "federation_receive": "/federation/receive",
                 "federation_validate": "/federation/validate",
+                "assert_verify": "/federation/assert/verify",
                 "media_proxy": "/media/proxy"
             }
         },

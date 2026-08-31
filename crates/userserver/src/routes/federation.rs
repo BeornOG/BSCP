@@ -15,6 +15,29 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/federation/receive", post(receive))
         .route("/federation/validate", get(validate))
+        .route("/federation/assert/verify", post(assert_verify))
+}
+
+#[derive(Deserialize)]
+struct AssertVerifyReq {
+    token: String,
+}
+
+/// Callback from a channel server: confirm we minted this assertion and it is
+/// still valid. Returns `{ valid, name, picture }`.
+async fn assert_verify(State(state): State<AppState>, Json(req): Json<AssertVerifyReq>) -> impl IntoResponse {
+    let claims: bscp_common::assertion::AssertionClaims =
+        match state.oidc.verify(&req.token, None) {
+            Ok(c) => c,
+            Err(_) => return Json(json!({ "valid": false })),
+        };
+    if claims.iss != state.cfg.public_url {
+        return Json(json!({ "valid": false }));
+    }
+    match crate::guilds::assert::verify_issued(&state, &claims.jti, &claims.sub, &claims.aud).await {
+        Some((name, picture)) => Json(json!({ "valid": true, "name": name, "picture": picture })),
+        None => Json(json!({ "valid": false })),
+    }
 }
 
 #[derive(Deserialize)]

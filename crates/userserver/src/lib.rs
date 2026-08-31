@@ -3,6 +3,7 @@
 
 pub mod auth;
 pub mod call;
+pub mod guilds;
 pub mod media;
 pub mod modules;
 pub mod oidc;
