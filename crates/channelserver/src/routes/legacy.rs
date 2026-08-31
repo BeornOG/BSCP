@@ -1,4 +1,4 @@
-use crate::AppState;
+use crate::state::AppState;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sqlx::FromRow;
 
-pub fn router(state: AppState) -> Router {
+pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/channel/send", post(channel_send))
         .route("/api/channel/poll", get(channel_poll))
@@ -18,7 +18,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/channel/webhooks/:id/regenerate", post(regenerate_webhook))
         .route("/webhooks/:id/:token", post(receive_webhook))
         .route("/.well-known/BSCP/channelserver", get(wellknown))
-        .with_state(state)
+
 }
 
 #[derive(FromRow)]
@@ -319,16 +319,22 @@ async fn wellknown(State(st): State<AppState>) -> impl IntoResponse {
     Json(json!({
         "server": { "name": "BSCP Channel Server", "version": "1.0", "type": "channelserver" },
         "api": {
-            "base": format!("http://{}", st.domain),
+            "base": st.public_url.clone(),
             "endpoints": {
                 "channel_send": "/api/channel/send",
                 "channel_poll": "/api/channel/poll",
-                "channel_webhooks": "/api/channel/webhooks"
+                "channel_webhooks": "/api/channel/webhooks",
+                "guilds": "/api/guilds",
+                "guilds_mine": "/api/guilds/mine",
+                "invite_accept": "/api/invites/{code}/accept",
+                "voice_token": "/api/channels/{id}/voice-token",
+                "calls_manager_ws": "/calls/manager/ws"
             }
         },
         "capabilities": {
             "federation": true,
             "channels": true,
+            "guilds": true,
             "direct_messaging": false,
             "media_upload": false,
             "webhooks": true

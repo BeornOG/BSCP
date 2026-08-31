@@ -37,6 +37,11 @@ pub struct ChannelServerConfig {
     pub port: u16,
     pub domain: String,
     pub db_path: PathBuf,
+    /// Externally reachable base URL (for OIDC `redirect_uri` + invite links).
+    pub public_url: String,
+    /// Signing secret for the operator-console cookie.
+    pub secret_key: String,
+    pub keys_file: PathBuf,
 }
 
 /// Parsed command line: `<binary> [env_file] [--db=PATH | --db PATH]`.
@@ -193,10 +198,18 @@ impl ChannelServerConfig {
             None => resolve_path(&base, &env_str("CH_DB_NAME").unwrap_or_else(|| "data/channelserver.db".into())),
         };
         ensure_parent_dir(&db_path);
+        let public_url = env_str("CH_PUBLIC_URL").unwrap_or_else(|| default_public_url(&domain));
 
         tracing::info!(config = %env_name, domain = %domain, port = port,
             db = %db_path.display(), "ChannelNode configuration");
-        Ok(ChannelServerConfig { port, domain, db_path })
+        Ok(ChannelServerConfig {
+            port,
+            domain,
+            db_path,
+            public_url,
+            secret_key: env_str("CH_SECRET_KEY").unwrap_or_else(|| "default_secret_key".into()),
+            keys_file: base.join("channel_keys.json"),
+        })
     }
 
     pub fn database_url(&self) -> String {
