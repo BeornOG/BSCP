@@ -151,11 +151,13 @@ async fn callback(
 
     // first sign-in claims the operator role
     let current: Option<String> =
-        sqlx::query_scalar("SELECT operator_sub FROM operator_config WHERE id = 1")
+        sqlx::query_scalar::<_, Option<String>>("SELECT operator_sub FROM operator_config WHERE id = 1")
             .fetch_optional(&state.pool)
             .await
             .ok()
-            .flatten();
+            .flatten()
+            .flatten()
+            .filter(|s| !s.is_empty());
     match current {
         None => {
             sqlx::query("UPDATE operator_config SET operator_sub = ? WHERE id = 1")

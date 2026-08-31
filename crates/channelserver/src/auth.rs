@@ -187,10 +187,11 @@ impl FromRequestParts<AppState> for Operator {
             return Err(err(StatusCode::UNAUTHORIZED, "session expired"));
         }
         let operator_sub: Option<String> =
-            sqlx::query_scalar("SELECT operator_sub FROM operator_config WHERE id = 1")
+            sqlx::query_scalar::<_, Option<String>>("SELECT operator_sub FROM operator_config WHERE id = 1")
                 .fetch_optional(&state.pool)
                 .await
                 .ok()
+                .flatten()
                 .flatten();
         if operator_sub.as_deref() != Some(sub.as_str()) {
             return Err(err(StatusCode::FORBIDDEN, "not the operator"));
