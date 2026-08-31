@@ -20,6 +20,7 @@ pub fn router() -> Router<AppState> {
         .route("/logout", post(logout))
         .route("/oauth/callback", get(callback))
         .route("/admin/guild-creators", post(guild_creators))
+        .route("/admin/blocked-domains", post(blocked_domains))
         .route("/invite/:code", get(invite_landing))
         .route("/invite/:code/go", get(invite_go))
 }
@@ -223,11 +224,54 @@ async fn guild_creators(State(state): State<AppState>, _op: Operator, Form(f): F
     Redirect::to("/").into_response()
 }
 
+#[derive(Deserialize)]
+struct BlockedDomainForm {
+    action: String,
+    domain: String,
+    #[serde(default)]
+    reason: String,
+}
+
+async fn blocked_domains(State(state): State<AppState>, _op: Operator, Form(f): Form<BlockedDomainForm>) -> Response {
+    let domain = bscp_common::moderation::normalize_domain(&f.domain);
+    if !domain.is_empty() && domain.contains('.') && !domain.eq_ignore_ascii_case(&state.domain) {
+        match f.action.as_str() {
+            "add" => {
+                let reason = f.reason.trim();
+                sqlx::query(
+                    "INSERT INTO blocked_domains (domain, reason, created_at) VALUES (?, ?, ?) \
+                     ON CONFLICT(domain) DO UPDATE SET reason = excluded.reason",
+                )
+                .bind(&domain)
+                .bind(if reason.is_empty() { None } else { Some(reason) })
+                .bind(now_ts())
+                .execute(&state.pool)
+                .await
+                .ok();
+            }
+            "remove" => {
+                sqlx::query("DELETE FROM blocked_domains WHERE domain = ?")
+                    .bind(&domain)
+                    .execute(&state.pool)
+                    .await
+                    .ok();
+            }
+            _ => {}
+        }
+    }
+    Redirect::to("/").into_response()
+}
+
 async fn console(State(state): State<AppState>, op: Operator) -> Html<String> {
     let creators: Vec<String> = sqlx::query_scalar("SELECT user_id FROM guild_creators ORDER BY user_id")
         .fetch_all(&state.pool)
         .await
         .unwrap_or_default();
+    let blocked: Vec<(String, Option<String>)> =
+        sqlx::query_as("SELECT domain, reason FROM blocked_domains ORDER BY domain")
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
     let guilds: Vec<(String, String, String, i64, i64, f64)> = sqlx::query_as(
         "SELECT g.id, g.name, g.owner, \
            (SELECT COUNT(*) FROM guild_members m WHERE m.guild_id = g.id), \
@@ -245,6 +289,18 @@ async fn console(State(state): State<AppState>, op: Operator) -> Html<String> {
                 "<tr><td>{u}</td><td><form class=inline method=post action=/admin/guild-creators>\
                  <input type=hidden name=action value=remove><input type=hidden name=user_id value='{u}'>\
                  <button>remove</button></form></td></tr>"
+            )
+        })
+        .collect();
+
+    let blocked_rows: String = blocked
+        .iter()
+        .map(|(d, reason)| {
+            format!(
+                "<tr><td>{d}</td><td>{}</td><td><form class=inline method=post action=/admin/blocked-domains>\
+                 <input type=hidden name=action value=remove><input type=hidden name=domain value='{d}'>\
+                 <button>unblock</button></form></td></tr>",
+                reason.as_deref().unwrap_or("")
             )
         })
         .collect();
@@ -270,6 +326,13 @@ async fn console(State(state): State<AppState>, op: Operator) -> Html<String> {
              <form method=post action=/admin/guild-creators>\
              <input type=hidden name=action value=add>\
              <input name=user_id placeholder='user@domain' size=28 required> <button>allow</button></form></div>\
+             <div class=card><h2>Blocked domains</h2>\
+             <p>Users whose home server is on one of these domains can't sign in, post, join, or use voice here.</p>\
+             <table><tr><th>domain</th><th>reason</th><th></th></tr>{blocked_rows}</table>\
+             <form method=post action=/admin/blocked-domains>\
+             <input type=hidden name=action value=add>\
+             <input name=domain placeholder='spam.example' size=22 required> \
+             <input name=reason placeholder='reason (optional)' size=24> <button>block</button></form></div>\
              <div class=card><h2>Guilds</h2>\
              <table><tr><th>name</th><th>owner</th><th>members</th><th>channels</th><th>created</th><th>id</th></tr>\
              {guild_rows}</table></div>",

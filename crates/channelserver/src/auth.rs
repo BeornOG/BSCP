@@ -81,6 +81,12 @@ pub async fn verify_assertion(state: &AppState, token: &str) -> Result<VerifiedA
     if (unverified.exp as f64) <= now_ts() {
         return Err(err(StatusCode::UNAUTHORIZED, "expired"));
     }
+    // issue #8 — the operator has blocked this user's home domain
+    if bscp_common::moderation::is_domain_blocked(&state.pool, &unverified.sub).await
+        || bscp_common::moderation::is_domain_blocked(&state.pool, &unverified.iss).await
+    {
+        return Err(err(StatusCode::FORBIDDEN, "home domain is blocked by this server"));
+    }
 
     // cache hit?
     if let Some(v) = state.verified.lock().unwrap().get(&unverified.jti) {

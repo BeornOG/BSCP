@@ -141,6 +141,9 @@ async fn get_messages(
 
     if target.contains('#') {
         let target_domain = target.split('#').next().unwrap_or_default();
+        if state.domain_blocked(target_domain).await {
+            return Err(ApiError::forbidden("That domain is blocked by this server"));
+        }
         let data = federation::poll_channel(&state.discovery, target_domain, &target, q.limit, q.since, q.before).await;
         return Ok(Json(data));
     }
@@ -203,6 +206,15 @@ async fn send_message(
     let recv_username = receiver.split('@').next().unwrap_or_default();
     if recv_username.starts_with("webhook-") {
         return Err(ApiError::forbidden("Cannot send messages to webhooks"));
+    }
+
+    // Target domain: the part before `#` for channels, otherwise after `@`.
+    let target_domain = match target.split_once('#') {
+        Some((dom, _)) => dom,
+        None => receiver.rsplit('@').next().unwrap_or_default(),
+    };
+    if state.domain_blocked(target_domain).await {
+        return Err(ApiError::forbidden("That domain is blocked by this server"));
     }
 
     if !target.contains('#') && get_profile(&state, &receiver).await?.is_none() {
@@ -315,26 +327,36 @@ pub(crate) async fn store_and_deliver(
         }
     }
 
-    // Federate (background, best-effort).
-    let payload = FedMessage {
-        id: full_id.clone(),
-        sender: out.sender.clone(),
-        receiver: out.receiver.clone(),
-        text: out.text.clone(),
-        validation_key: val_key.clone(),
-        kind: out.kind.clone(),
-        metadata: out.metadata.clone(),
+    // Federate (background, best-effort). Skip entirely if the destination
+    // domain is on the blocklist (issue #8) — catches calls and any other
+    // caller of store_and_deliver, not just POST /messages.
+    let dest_domain = match out.target.split_once('#') {
+        Some((dom, _)) => dom,
+        None => out.receiver.rsplit('@').next().unwrap_or_default(),
     };
-    let disc = state.discovery.clone();
-    let target_clone = out.target.clone();
-    let receiver_clone = out.receiver.clone();
-    tokio::spawn(async move {
-        if let Some(dom) = target_clone.contains('#').then(|| target_clone.split('#').next().unwrap_or_default().to_string()) {
-            federation::deliver_channel(&disc, &dom, &payload).await;
-        } else if let Some(dom) = receiver_clone.rsplit('@').next() {
-            federation::deliver_dm(&disc, dom, &payload).await;
-        }
-    });
+    if state.domain_blocked(dest_domain).await {
+        tracing::info!(domain = %dest_domain, "[FEDERATION] not delivering to blocked domain");
+    } else {
+        let payload = FedMessage {
+            id: full_id.clone(),
+            sender: out.sender.clone(),
+            receiver: out.receiver.clone(),
+            text: out.text.clone(),
+            validation_key: val_key.clone(),
+            kind: out.kind.clone(),
+            metadata: out.metadata.clone(),
+        };
+        let disc = state.discovery.clone();
+        let target_clone = out.target.clone();
+        let receiver_clone = out.receiver.clone();
+        tokio::spawn(async move {
+            if let Some(dom) = target_clone.contains('#').then(|| target_clone.split('#').next().unwrap_or_default().to_string()) {
+                federation::deliver_channel(&disc, &dom, &payload).await;
+            } else if let Some(dom) = receiver_clone.rsplit('@').next() {
+                federation::deliver_dm(&disc, dom, &payload).await;
+            }
+        });
+    }
 
     Ok(Message {
         id: full_id,

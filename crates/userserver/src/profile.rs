@@ -52,6 +52,10 @@ pub async fn get_profile(state: &AppState, full_id: &str) -> Result<Option<Value
         });
     }
 
+    if state.domain_blocked(domain).await {
+        return Ok(None);
+    }
+
     match bscp_common::federation::fetch_remote_profile(&state.discovery, domain, full_id).await {
         Ok(v) => Ok(v),
         Err(()) => Err(ApiError::bad_gateway("Failed to reach remote server")),

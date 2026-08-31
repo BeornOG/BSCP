@@ -29,6 +29,15 @@ impl AppState {
     pub fn full_id(&self, username: &str) -> String {
         format!("{}@{}", username, self.cfg.domain)
     }
+
+    /// True if `domain` (a bare domain, `user@domain`, or a URL) is on the
+    /// admin's federation blocklist. Our own domain is never blocked.
+    pub async fn domain_blocked(&self, domain: &str) -> bool {
+        let d = crate::moderation::normalize_domain(domain);
+        !d.is_empty()
+            && !d.eq_ignore_ascii_case(&self.cfg.domain)
+            && crate::moderation::is_domain_blocked(&self.pool, &d).await
+    }
 }
 
 impl FromRef<AppState> for Key {

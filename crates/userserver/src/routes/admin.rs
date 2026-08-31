@@ -21,6 +21,67 @@ pub fn router() -> Router<AppState> {
         .route("/api/admin/oauth/clients/:client_id", axum::routing::delete(revoke_oauth_client))
         .route("/api/admin/modules", get(list_modules).post(add_module))
         .route("/api/admin/modules/:name", axum::routing::delete(remove_module).patch(patch_module))
+        .route("/api/admin/blocked-domains", get(list_blocked_domains).post(block_domain))
+        .route("/api/admin/blocked-domains/:domain", axum::routing::delete(unblock_domain))
+}
+
+// ── blocked domains (issue #8) ───────────────────────────────────────
+
+async fn list_blocked_domains(State(state): State<AppState>, _a: AdminUser) -> Result<Json<Value>, ApiError> {
+    let rows = sqlx::query_as::<_, (String, Option<String>, Option<String>, f64)>(
+        "SELECT domain, reason, blocked_by, created_at FROM blocked_domains ORDER BY created_at DESC",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    let out: Vec<Value> = rows
+        .into_iter()
+        .map(|(domain, reason, blocked_by, created_at)| {
+            json!({ "domain": domain, "reason": reason, "blocked_by": blocked_by, "created_at": created_at })
+        })
+        .collect();
+    Ok(Json(json!(out)))
+}
+
+#[derive(Deserialize)]
+struct BlockDomain {
+    domain: String,
+    reason: Option<String>,
+}
+
+async fn block_domain(
+    State(state): State<AppState>,
+    a: AdminUser,
+    Json(body): Json<BlockDomain>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let domain = crate::moderation::normalize_domain(&body.domain);
+    if domain.is_empty() || !domain.contains('.') {
+        return Err(ApiError::bad_request("Enter a valid domain (e.g. spam.example)"));
+    }
+    if domain.eq_ignore_ascii_case(state.domain()) {
+        return Err(ApiError::bad_request("Cannot block your own server"));
+    }
+    let reason = body.reason.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    sqlx::query(
+        "INSERT INTO blocked_domains (domain, reason, blocked_by, created_at) VALUES (?, ?, ?, ?) \
+         ON CONFLICT(domain) DO UPDATE SET reason = excluded.reason",
+    )
+    .bind(&domain)
+    .bind(reason)
+    .bind(&a.0.username)
+    .bind(now_ts())
+    .execute(&state.pool)
+    .await?;
+    Ok((StatusCode::CREATED, Json(json!({ "domain": domain, "reason": reason }))))
+}
+
+async fn unblock_domain(
+    State(state): State<AppState>,
+    _a: AdminUser,
+    Path(domain): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let domain = crate::moderation::normalize_domain(&domain);
+    sqlx::query("DELETE FROM blocked_domains WHERE domain = ?").bind(&domain).execute(&state.pool).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ── OIDC clients / config ────────────────────────────────────────────

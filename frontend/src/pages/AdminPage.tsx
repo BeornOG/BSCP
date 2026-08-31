@@ -3,6 +3,7 @@ import { useUsers, useInvites, useGenerateInvite, useDeleteUser } from '../hooks
 import { useUpdateUserStorageLimit } from '../hooks/useUserStorageConfig';
 import { useOAuthConfig, useSetOAuthEnabled, useOAuthClients, useRevokeOAuthClient } from '../hooks/useOAuthApps';
 import { useModules, useAddModule, useSetModuleEnabled, useRemoveModule, type AddModuleResult } from '../hooks/useModules';
+import { useBlockedDomains, useBlockDomain, useUnblockDomain } from '../hooks/useBlockedDomains';
 import { Card, CardHeader, CardContent, Button, Badge, Spinner, Input } from '../components/ui';
 
 export default function AdminPage() {
@@ -26,6 +27,25 @@ export default function AdminPage() {
   const removeModule = useRemoveModule();
   const [moduleUrl, setModuleUrl] = useState('');
   const [newModule, setNewModule] = useState<AddModuleResult | null>(null);
+
+  const { data: blockedDomains } = useBlockedDomains();
+  const blockDomain = useBlockDomain();
+  const unblockDomain = useUnblockDomain();
+  const [domainInput, setDomainInput] = useState('');
+  const [domainReason, setDomainReason] = useState('');
+
+  const handleBlockDomain = () => {
+    if (!domainInput.trim()) return;
+    blockDomain.mutate(
+      { domain: domainInput.trim(), reason: domainReason.trim() || undefined },
+      {
+        onSuccess: () => {
+          setDomainInput('');
+          setDomainReason('');
+        },
+      },
+    );
+  };
 
   const handleAddModule = () => {
     if (!moduleUrl.trim()) return;
@@ -299,6 +319,71 @@ export default function AdminPage() {
                 <tr>
                   <td colSpan={4} className="py-6 text-center text-[#71747a]">
                     No modules installed
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+
+      {/* Blocked Domains */}
+      <Card>
+        <CardHeader>
+          <h2 className="text-lg font-medium text-[#e8eaed]">Blocked Domains</h2>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-[#71747a] mb-4">
+            Messages to and from a blocked domain are refused, and its channel servers
+            can't be used from this server.
+          </p>
+          <div className="flex flex-wrap gap-2 mb-4">
+            <Input
+              placeholder="spam.example"
+              value={domainInput}
+              onChange={(e) => setDomainInput(e.target.value)}
+            />
+            <Input
+              placeholder="Reason (optional)"
+              value={domainReason}
+              onChange={(e) => setDomainReason(e.target.value)}
+            />
+            <Button onClick={handleBlockDomain} disabled={blockDomain.isPending}>
+              {blockDomain.isPending ? 'Blocking…' : 'Block'}
+            </Button>
+          </div>
+          {blockDomain.isError && (
+            <p className="text-sm text-red-400 mb-3">{(blockDomain.error as Error).message}</p>
+          )}
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[#71747a]">
+                <th className="pb-3 font-medium">Domain</th>
+                <th className="pb-3 font-medium">Reason</th>
+                <th className="pb-3 font-medium">Blocked by</th>
+                <th className="pb-3 font-medium text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {blockedDomains?.map((d) => (
+                <tr key={d.domain} className="border-b border-[#232529] last:border-0">
+                  <td className="py-3 text-[#e8eaed]">{d.domain}</td>
+                  <td className="py-3 text-[#71747a]">{d.reason || '—'}</td>
+                  <td className="py-3 text-[#71747a]">{d.blocked_by || '—'}</td>
+                  <td className="py-3 text-right">
+                    <button
+                      onClick={() => unblockDomain.mutate(d.domain)}
+                      className="text-blue-400 hover:text-blue-300 text-xs transition-colors"
+                    >
+                      Unblock
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {(!blockedDomains || blockedDomains.length === 0) && (
+                <tr>
+                  <td colSpan={4} className="py-6 text-center text-[#71747a]">
+                    No domains blocked
                   </td>
                 </tr>
               )}

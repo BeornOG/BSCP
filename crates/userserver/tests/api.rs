@@ -318,3 +318,62 @@ async fn two_factor_round_trip() {
         .await;
     assert_eq!(login["requires_2fa"], json!(true));
 }
+
+#[tokio::test]
+async fn blocked_domain_rejects_federation_and_sending() {
+    let s = server().await;
+    let admin = setup_admin(&s).await;
+
+    // Block a domain.
+    let (status, v) = s
+        .call(with_token(
+            post_json("/api/admin/blocked-domains", json!({ "domain": "https://Spam.Example/x", "reason": "junk" })),
+            &admin,
+        ))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{v:?}");
+    assert_eq!(v["domain"], json!("spam.example"));
+
+    // It shows up in the list, normalised.
+    let (status, v) = s
+        .call(with_token(get("/api/admin/blocked-domains"), &admin))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(v[0]["domain"], json!("spam.example"));
+
+    // Inbound federated message from that domain is refused before validation.
+    let (status, _) = s
+        .call(post_json(
+            "/federation/receive",
+            json!({
+                "id": "m1", "sender": "eve@spam.example", "receiver": "admin@localhost:5000",
+                "text": "hi", "validationKey": "k"
+            }),
+        ))
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // A local user can't send to that domain either.
+    let (status, v) = s
+        .call(with_token(
+            post_json("/api/chats/eve@spam.example/messages", json!({ "text": "hi" })),
+            &admin,
+        ))
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{v:?}");
+
+    // Unblock and confirm the list is empty.
+    let (status, _) = s
+        .call(with_token(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/admin/blocked-domains/spam.example")
+                .body(Body::empty())
+                .unwrap(),
+            &admin,
+        ))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, v) = s.call(with_token(get("/api/admin/blocked-domains"), &admin)).await;
+    assert_eq!(v.as_array().map(|a| a.len()), Some(0));
+}

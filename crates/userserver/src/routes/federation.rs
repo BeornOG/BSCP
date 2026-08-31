@@ -34,6 +34,9 @@ async fn assert_verify(State(state): State<AppState>, Json(req): Json<AssertVeri
     if claims.iss != state.cfg.public_url {
         return Json(json!({ "valid": false }));
     }
+    if state.domain_blocked(&claims.aud).await {
+        return Json(json!({ "valid": false }));
+    }
     match crate::guilds::assert::verify_issued(&state, &claims.jti, &claims.sub, &claims.aud).await {
         Some((name, picture)) => Json(json!({ "valid": true, "name": name, "picture": picture })),
         None => Json(json!({ "valid": false })),
@@ -59,6 +62,12 @@ async fn receive(State(state): State<AppState>, Json(data): Json<IncomingMessage
         return (StatusCode::BAD_REQUEST, "Invalid sender format").into_response();
     }
     let sender_domain = data.sender.rsplit('@').next().unwrap_or_default().to_string();
+
+    if crate::moderation::is_domain_blocked(&state.pool, &sender_domain).await {
+        tracing::info!(domain = %sender_domain, "[FEDERATION] rejected message from blocked domain");
+        return (StatusCode::FORBIDDEN, "Sender domain is blocked").into_response();
+    }
+
     let val_key = data.validation_key.clone().unwrap_or_default();
 
     let valid = bscp_common::federation::validate_remote(
