@@ -16,6 +16,26 @@ const VIDEO_MIMETYPES: &[&str] = &[
     "video/x-matroska",
 ];
 
+const AUDIO_MIMETYPES: &[&str] = &[
+    "audio/mpeg", "audio/mp3", "audio/ogg", "audio/wav", "audio/x-wav", "audio/webm", "audio/flac",
+    "audio/aac", "audio/mp4",
+];
+
+/// Build the snippet that gets dropped into the message box for an upload.
+/// Images embed inline, audio/video render as players (bare URL — the client
+/// upgrades it), everything else becomes a plain download link so we don't emit
+/// a broken `![image]()` for PDFs, archives, documents, … (issues #15/#17).
+fn upload_markdown(mimetype: &str, orig_name: &str, file_url: &str) -> String {
+    if mimetype.starts_with("image/") {
+        format!("![{orig_name}]({file_url})")
+    } else if VIDEO_MIMETYPES.contains(&mimetype) || AUDIO_MIMETYPES.contains(&mimetype) {
+        file_url.to_string()
+    } else {
+        let label = if orig_name.is_empty() { "download" } else { orig_name };
+        format!("[{label}]({file_url})")
+    }
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/upload", post(upload))
@@ -80,11 +100,7 @@ async fn upload(
     .await?;
 
     let file_url = format!("http://{}/uploads/{}", state.domain(), filename);
-    let markdown = if VIDEO_MIMETYPES.contains(&mimetype.as_str()) {
-        file_url.clone()
-    } else {
-        format!("![image]({file_url})")
-    };
+    let markdown = upload_markdown(&mimetype, &orig, &file_url);
 
     Ok((StatusCode::CREATED, Json(json!({ "url": file_url, "mimetype": mimetype, "markdown": markdown }))))
 }
@@ -134,4 +150,26 @@ async fn list(State(state): State<AppState>, auth: AuthUser) -> Result<Json<Valu
         .collect();
 
     Ok(Json(json!({ "uploads": items, "total_size_bytes": total, "limit_bytes": limit_bytes })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::upload_markdown;
+
+    #[test]
+    fn images_embed_inline() {
+        assert_eq!(upload_markdown("image/png", "cat.png", "http://h/uploads/x"), "![cat.png](http://h/uploads/x)");
+    }
+
+    #[test]
+    fn media_players_use_bare_url() {
+        assert_eq!(upload_markdown("video/mp4", "clip.mp4", "http://h/uploads/x"), "http://h/uploads/x");
+        assert_eq!(upload_markdown("audio/mpeg", "song.mp3", "http://h/uploads/x"), "http://h/uploads/x");
+    }
+
+    #[test]
+    fn other_files_become_links_not_broken_images() {
+        assert_eq!(upload_markdown("application/pdf", "report.pdf", "http://h/uploads/x"), "[report.pdf](http://h/uploads/x)");
+        assert_eq!(upload_markdown("application/zip", "", "http://h/uploads/x"), "[download](http://h/uploads/x)");
+    }
 }
