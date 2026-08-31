@@ -3,6 +3,7 @@ pub mod auth;
 pub mod calls;
 pub mod chats;
 pub mod federation;
+pub mod guilds;
 pub mod invites;
 pub mod misc;
 pub mod modules;
@@ -30,6 +31,7 @@ pub fn build(state: AppState) -> Router {
         .merge(admin::router())
         .merge(federation::router())
         .merge(calls::router())
+        .merge(guilds::router())
         .merge(oidc::router())
         .merge(modules::router())
         .merge(misc::router());

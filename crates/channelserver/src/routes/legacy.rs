@@ -18,6 +18,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/channel/webhooks/:id/regenerate", post(regenerate_webhook))
         .route("/webhooks/:id/:token", post(receive_webhook))
         .route("/.well-known/BSCP/channelserver", get(wellknown))
+        .route("/.well-known/BSCP/channelserver.json", get(wellknown))
 
 }
 

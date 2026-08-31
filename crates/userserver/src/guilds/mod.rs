@@ -3,3 +3,4 @@
 //! guild traffic to channel servers on the user's behalf.
 
 pub mod assert;
+pub mod gateway;

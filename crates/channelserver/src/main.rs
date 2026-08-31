@@ -33,6 +33,17 @@ async fn main() -> anyhow::Result<()> {
     let pool = bscp_common::db::connect(&cfg.database_url()).await?;
     MIGRATOR.run(&pool).await?;
 
+    // Operator convenience: seed the guild-creator allowlist from CH_ALLOW_GUILD_CREATORS
+    // (comma-separated user@domain) so it can be managed as config instead of the console.
+    if let Ok(list) = std::env::var("CH_ALLOW_GUILD_CREATORS") {
+        for uid in list.split(',').map(|s| s.trim().to_lowercase()).filter(|s| s.contains('@')) {
+            let _ = sqlx::query("INSERT OR IGNORE INTO guild_creators (user_id) VALUES (?)")
+                .bind(&uid)
+                .execute(&pool)
+                .await;
+        }
+    }
+
     let state = AppState::new(pool, &cfg);
     let app = routes::router(state);
 
