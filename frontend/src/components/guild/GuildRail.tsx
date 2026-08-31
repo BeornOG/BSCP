@@ -4,8 +4,7 @@ import { useGuilds, useCreateGuild, useJoinGuild } from '../../hooks/useGuilds';
 
 export default function GuildRail() {
   const { data: guilds } = useGuilds();
-  const [menu, setMenu] = useState(false);
-  const [mode, setMode] = useState<null | 'create' | 'join'>(null);
+  const [open, setOpen] = useState(false);
 
   return (
     <>
@@ -30,47 +29,24 @@ export default function GuildRail() {
         </NavLink>
       ))}
 
-      <div className="relative">
-        <button
-          onClick={() => setMenu((m) => !m)}
-          className="w-10 h-10 rounded-xl bg-[#1a1d21] text-green-400 text-lg hover:bg-green-600 hover:text-white"
-          title="Add a guild"
-        >
-          +
-        </button>
-        {menu && (
-          <div className="absolute left-12 top-0 z-20 w-40 rounded-lg bg-[#151517] border border-[#232529] p-1 text-sm">
-            <button
-              className="w-full text-left px-3 py-2 rounded hover:bg-[#232529]"
-              onClick={() => {
-                setMenu(false);
-                setMode('join');
-              }}
-            >
-              Join a guild
-            </button>
-            <button
-              className="w-full text-left px-3 py-2 rounded hover:bg-[#232529]"
-              onClick={() => {
-                setMenu(false);
-                setMode('create');
-              }}
-            >
-              Create a guild
-            </button>
-          </div>
-        )}
-      </div>
+      <button
+        onClick={() => setOpen(true)}
+        className="w-10 h-10 rounded-xl bg-[#1a1d21] text-green-400 text-lg hover:bg-green-600 hover:text-white"
+        title="Add a guild"
+      >
+        +
+      </button>
 
-      {mode && <GuildDialog mode={mode} onClose={() => setMode(null)} />}
+      {open && <GuildDialog onClose={() => setOpen(false)} />}
     </>
   );
 }
 
-function GuildDialog({ mode, onClose }: { mode: 'create' | 'join'; onClose: () => void }) {
+function GuildDialog({ onClose }: { onClose: () => void }) {
   const nav = useNavigate();
   const create = useCreateGuild();
   const join = useJoinGuild();
+  const [mode, setMode] = useState<'create' | 'join'>('create');
   const [cs, setCs] = useState('');
   const [name, setName] = useState('');
   const [invite, setInvite] = useState('');
@@ -81,7 +57,7 @@ function GuildDialog({ mode, onClose }: { mode: 'create' | 'join'; onClose: () =
     try {
       if (mode === 'create') {
         const r = await create.mutateAsync({ channel_server: cs.trim(), name: name.trim() });
-        if (!r.ok) throw new Error('server refused (are you on the allowlist?)');
+        if (!r.ok) throw new Error('server refused — is your account on its guild-creator allowlist?');
         nav(`/g/${r.channel_server}/${r.guild_id}`);
       } else {
         const r = await join.mutateAsync(invite.trim());
@@ -94,35 +70,62 @@ function GuildDialog({ mode, onClose }: { mode: 'create' | 'join'; onClose: () =
     }
   };
 
+  const tab = (m: 'create' | 'join', label: string) => (
+    <button
+      onClick={() => {
+        setMode(m);
+        setErr('');
+      }}
+      className={`flex-1 py-1.5 text-sm rounded-lg ${
+        mode === m ? 'bg-[var(--accent)] text-white' : 'bg-[#0f0f11] text-[#a3a5a9]'
+      }`}
+    >
+      {label}
+    </button>
+  );
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div className="w-80 rounded-2xl bg-[#151517] border border-[#232529] p-5" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-[#e8eaed] font-medium mb-3">{mode === 'create' ? 'Create a guild' : 'Join a guild'}</h2>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div
+        className="w-80 rounded-2xl bg-[#151517] border border-[#232529] p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex gap-2 mb-4">
+          {tab('create', 'Create')}
+          {tab('join', 'Join')}
+        </div>
+
         {mode === 'create' ? (
           <>
             <input
-              className="w-full mb-2 px-3 py-2 rounded-lg bg-[#0f0f11] border border-[#333] text-sm"
-              placeholder="channel server (e.g. chat.example.com)"
+              autoFocus
+              className="w-full mb-2 px-3 py-2 rounded-lg bg-[#0f0f11] border border-[#333] text-sm outline-none focus:border-[var(--accent)]"
+              placeholder="channel server — e.g. localhost:6060"
               value={cs}
               onChange={(e) => setCs(e.target.value)}
             />
             <input
-              className="w-full mb-2 px-3 py-2 rounded-lg bg-[#0f0f11] border border-[#333] text-sm"
+              className="w-full mb-2 px-3 py-2 rounded-lg bg-[#0f0f11] border border-[#333] text-sm outline-none focus:border-[var(--accent)]"
               placeholder="guild name"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && submit()}
             />
           </>
         ) : (
           <input
-            className="w-full mb-2 px-3 py-2 rounded-lg bg-[#0f0f11] border border-[#333] text-sm"
-            placeholder="invite link"
+            autoFocus
+            className="w-full mb-2 px-3 py-2 rounded-lg bg-[#0f0f11] border border-[#333] text-sm outline-none focus:border-[var(--accent)]"
+            placeholder="invite link (https://…/invite/CODE)"
             value={invite}
             onChange={(e) => setInvite(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && submit()}
           />
         )}
+
         {err && <p className="text-red-400 text-xs mb-2">{err}</p>}
-        <div className="flex gap-2 justify-end mt-2">
+
+        <div className="flex gap-2 justify-end mt-3">
           <button className="px-3 py-1.5 text-sm text-[#71747a] hover:text-[#e8eaed]" onClick={onClose}>
             Cancel
           </button>
@@ -131,7 +134,7 @@ function GuildDialog({ mode, onClose }: { mode: 'create' | 'join'; onClose: () =
             disabled={create.isPending || join.isPending}
             onClick={submit}
           >
-            {mode === 'create' ? 'Create' : 'Join'}
+            {create.isPending || join.isPending ? '…' : mode === 'create' ? 'Create' : 'Join'}
           </button>
         </div>
       </div>
