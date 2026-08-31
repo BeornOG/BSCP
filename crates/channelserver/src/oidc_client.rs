@@ -17,12 +17,19 @@ pub struct IdpMeta {
 
 /// Resolve an IdP from a `user@domain` or bare `domain` string.
 pub async fn discover(state: &AppState, idp_input: &str) -> anyhow::Result<IdpMeta> {
-    let host = idp_input.rsplit('@').next().unwrap_or(idp_input).trim();
-    // try BSCP well-known first (it points at the openid-configuration), then direct
-    let candidates = [
-        format!("http://{host}/.well-known/openid-configuration"),
-        format!("https://{host}/.well-known/openid-configuration"),
-    ];
+    // accept `user@domain`, bare `domain[:port]`, or a full issuer URL
+    let raw = idp_input.rsplit('@').next().unwrap_or(idp_input).trim();
+    let (scheme, host) = match raw.split_once("://") {
+        Some((sc, rest)) => (Some(sc), rest.split('/').next().unwrap_or(rest)),
+        None => (None, raw.split('/').next().unwrap_or(raw)),
+    };
+    let candidates: Vec<String> = match scheme {
+        Some(sc) => vec![format!("{sc}://{host}/.well-known/openid-configuration")],
+        None => vec![
+            format!("http://{host}/.well-known/openid-configuration"),
+            format!("https://{host}/.well-known/openid-configuration"),
+        ],
+    };
     let client = state.discovery.client();
     for url in candidates {
         if let Ok(resp) = client.get(&url).send().await {
@@ -138,7 +145,6 @@ pub async fn complete(state: &AppState, code: &str, st: &str) -> anyhow::Result<
     .fetch_optional(&state.pool)
     .await?
     .ok_or_else(|| anyhow!("unknown or expired state"))?;
-    sqlx::query("DELETE FROM oidc_states WHERE state = ?").bind(st).execute(&state.pool).await.ok();
     let (issuer, verifier) = row;
 
     let meta = discover(state, &issuer).await?;
@@ -175,6 +181,10 @@ pub async fn complete(state: &AppState, code: &str, st: &str) -> anyhow::Result<
     let payload = id_token.split('.').nth(1).ok_or_else(|| anyhow!("bad id_token"))?;
     let claims: Value = serde_json::from_slice(&B64.decode(payload)?)?;
     let sub = s(&claims, "sub").ok_or_else(|| anyhow!("id_token has no sub"))?;
+
+    // consume the one-time state only once we know the exchange succeeded
+    sqlx::query("DELETE FROM oidc_states WHERE state = ?").bind(st).execute(&state.pool).await.ok();
+
     Ok(OperatorIdentity { sub, name: s(&claims, "name").or_else(|| s(&claims, "preferred_username")) })
 }
 
