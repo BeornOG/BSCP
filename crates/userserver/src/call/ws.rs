@@ -85,9 +85,18 @@ async fn browser_loop(socket: WebSocket, state: AppState, user: User) {
             SignalMsg::Accept { call_id } => accept_call(&state, &user, &call_id).await,
             SignalMsg::Reject { call_id } => reject_call(&state, &user, &call_id).await,
             SignalMsg::Hangup { call_id } | SignalMsg::Leave { call_id } => {
-                leave_call(&state, &user, &call_id).await
+                let cid = if call_id.is_empty() {
+                    state.calls.user_call(&user.id).unwrap_or_default()
+                } else {
+                    call_id
+                };
+                if !cid.is_empty() {
+                    leave_call(&state, &user, &cid).await;
+                }
             }
-            SignalMsg::JoinRoom { .. } => err_to(&state, &user.id, "channel voice rooms are not available yet"),
+            SignalMsg::JoinRoom { channel_server, channel_id } => {
+                join_room(&state, &user, &channel_server, &channel_id).await
+            }
             SignalMsg::Sdp { .. } | SignalMsg::Ice { .. } => engine::on_client_signal(&state, &user, sig).await,
             SignalMsg::Mute { muted, .. } => {
                 if let Some(cid) = state.calls.user_call(&user.id) {
@@ -238,23 +247,33 @@ async fn accept_call(state: &AppState, user: &User, call_id: &str) {
         return;
     }
 
+    if let Err(e) = connect_to_manager(state, user, &inv.call_id, &inv.manager_ws_url, &inv.token).await {
+        err_to(state, &user.id, e);
+    }
+}
+
+/// Dial a remote call manager (a peer user server for a DM, or a channel server
+/// for a guild voice room), `Join`, and pump its frames into the engine + browsers.
+pub async fn connect_to_manager(
+    state: &AppState,
+    user: &User,
+    call_id: &str,
+    manager_ws_url: &str,
+    token: &str,
+) -> Result<(), &'static str> {
     let me_full = state.full_id(&user.username);
     let url = format!(
-        "{}?call_id={}&token={}&server={}",
-        inv.manager_ws_url, inv.call_id, inv.token, state.domain()
+        "{manager_ws_url}?call_id={call_id}&token={token}&server={}",
+        state.domain()
     );
-    let (stream, _) = match tokio_tungstenite::connect_async(url.as_str()).await {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!(error = %e, url, "could not reach call manager");
-            return err_to(state, &user.id, "could not reach call manager");
-        }
-    };
+    let (stream, _) = tokio_tungstenite::connect_async(url.as_str())
+        .await
+        .map_err(|_| "could not reach call manager")?;
     let (mut sink, mut src) = stream.split();
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<SignalMsg>();
 
     let _ = out_tx.send(SignalMsg::Join {
-        call_id: inv.call_id.clone(),
+        call_id: call_id.to_string(),
         server: state.domain().to_string(),
         members: vec![me_full],
     });
@@ -268,12 +287,12 @@ async fn accept_call(state: &AppState, user: &User, call_id: &str) {
         }
     });
 
-    state.calls.set_manager_link(&inv.call_id, out_tx);
-    state.calls.add_local(&inv.call_id, &user.id);
-    state.calls.set_user_call(&user.id, &inv.call_id);
+    state.calls.set_manager_link(call_id, out_tx);
+    state.calls.add_local(call_id, &user.id);
+    state.calls.set_user_call(&user.id, call_id);
 
     let st = state.clone();
-    let cid = inv.call_id.clone();
+    let cid = call_id.to_string();
     tokio::spawn(async move {
         while let Some(Ok(m)) = src.next().await {
             let tokio_tungstenite::tungstenite::Message::Text(t) = m else { continue };
@@ -284,6 +303,49 @@ async fn accept_call(state: &AppState, user: &User, call_id: &str) {
         }
         st.calls.drop_manager_link(&cid);
     });
+    Ok(())
+}
+
+async fn join_room(state: &AppState, user: &User, channel_server: &str, channel_id: &str) {
+    if state.calls.user_call(&user.id).is_some() {
+        // leave the current voice channel first
+        if let Some(cid) = state.calls.user_call(&user.id) {
+            leave_call(state, user, &cid).await;
+        }
+    }
+    let r = match crate::guilds::gateway::forward(
+        state,
+        user,
+        channel_server,
+        reqwest::Method::POST,
+        &format!("channels/{channel_id}/voice-token"),
+        None,
+        Some(json!({})),
+    )
+    .await
+    {
+        Ok(r) if (200..300).contains(&r.status) => r.body,
+        Ok(r) => {
+            return err_to(
+                state,
+                &user.id,
+                if r.status == 403 { "not allowed to join this voice channel" } else { "voice channel unavailable" },
+            )
+        }
+        Err(_) => return err_to(state, &user.id, "could not reach channel server"),
+    };
+
+    let (Some(call_id), Some(url), Some(tok)) = (
+        r.get("call_id").and_then(|v| v.as_str()),
+        r.get("manager_ws_url").and_then(|v| v.as_str()),
+        r.get("token").and_then(|v| v.as_str()),
+    ) else {
+        return err_to(state, &user.id, "bad voice token");
+    };
+
+    if let Err(e) = connect_to_manager(state, user, call_id, url, tok).await {
+        err_to(state, &user.id, e);
+    }
 }
 
 async fn reject_call(state: &AppState, user: &User, call_id: &str) {

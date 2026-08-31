@@ -21,8 +21,11 @@ pub enum SignalMsg {
     /// Accept / reject a `call_invite` the browser was shown.
     Accept { call_id: CallId },
     Reject { call_id: CallId },
-    /// Join / leave a persistent channel voice room.
-    JoinRoom { channel_path: String },
+    /// Join a persistent channel voice room (a channel server hosts the manager).
+    JoinRoom {
+        channel_server: String,
+        channel_id: String,
+    },
     Leave { call_id: CallId },
     /// End the call for everyone (initiator / any participant).
     Hangup { call_id: CallId },
