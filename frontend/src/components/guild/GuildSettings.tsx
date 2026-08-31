@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useGuild, useGuildMembers, useGuildAdmin } from '../../hooks/useGuilds';
 import { P, can } from '../../lib/guilds';
+import type { ChannelOverride, Webhook } from '../../lib/guilds';
 
 const PERM_LABELS: [number, string][] = [
   [P.VIEW_CHANNEL, 'View channels'],
@@ -16,7 +17,17 @@ const PERM_LABELS: [number, string][] = [
   [P.ADMINISTRATOR, 'Administrator'],
 ];
 
-type Tab = 'channels' | 'roles' | 'members' | 'invites';
+// The subset that makes sense as a per-channel / per-category override.
+const OVERRIDE_PERMS: [number, string][] = [
+  [P.VIEW_CHANNEL, 'View'],
+  [P.SEND_MESSAGES, 'Send'],
+  [P.MANAGE_MESSAGES, 'Manage msgs'],
+  [P.CONNECT, 'Connect'],
+  [P.SPEAK, 'Speak'],
+];
+
+type Tab = 'channels' | 'roles' | 'members' | 'invites' | 'webhooks';
+const TABS: Tab[] = ['channels', 'roles', 'members', 'invites', 'webhooks'];
 
 export default function GuildSettings({ cs, gid, onClose }: { cs: string; gid: string; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>('channels');
@@ -26,11 +37,11 @@ export default function GuildSettings({ cs, gid, onClose }: { cs: string; gid: s
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div
-        className="w-[640px] max-h-[80vh] rounded-2xl bg-[#151517] border border-[#232529] flex overflow-hidden"
+        className="w-[680px] max-h-[80vh] rounded-2xl bg-[#151517] border border-[#232529] flex overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <nav className="w-40 shrink-0 bg-[#0f0f11] p-3 text-sm">
-          {(['channels', 'roles', 'members', 'invites'] as Tab[]).map((t) => (
+          {TABS.map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -51,8 +62,10 @@ export default function GuildSettings({ cs, gid, onClose }: { cs: string; gid: s
             <RolesTab guild={guild} admin={admin} />
           ) : tab === 'members' ? (
             <MembersTab cs={cs} gid={gid} guild={guild} admin={admin} />
-          ) : (
+          ) : tab === 'invites' ? (
             <InvitesTab admin={admin} />
+          ) : (
+            <WebhooksTab guild={guild} admin={admin} />
           )}
         </div>
       </div>
@@ -66,39 +79,169 @@ type Guild = NonNullable<ReturnType<typeof useGuild>['data']>;
 function ChannelsTab({ guild, admin }: { guild: Guild; admin: Admin }) {
   const [name, setName] = useState('');
   const [kind, setKind] = useState('text');
+  const [parent, setParent] = useState('');
+  const [permsFor, setPermsFor] = useState<string | null>(null);
+  const categories = guild.channels.filter((c) => c.kind === 'category');
+
   return (
     <div>
       <h3 className="font-medium text-[#e8eaed] mb-3">Channels</h3>
       {guild.channels.map((c) => (
-        <div key={c.id} className="flex items-center gap-2 py-1">
-          <span className="text-[#71747a]">{c.kind === 'voice' ? '🔊' : '#'}</span>
-          <span className="flex-1 truncate text-[#c7c9cd]">{c.name}</span>
-          <button className="text-red-400 text-xs" onClick={() => admin.deleteChannel(c.id)}>
-            delete
-          </button>
+        <div key={c.id}>
+          <div className="flex items-center gap-2 py-1">
+            <span className="text-[#71747a]">
+              {c.kind === 'voice' ? '🔊' : c.kind === 'category' ? '📁' : '#'}
+            </span>
+            <span className="flex-1 truncate text-[#c7c9cd]">
+              {c.name}
+              {c.parent_id && (
+                <span className="text-[#5b5e63] text-xs">
+                  {' '}
+                  · {categories.find((p) => p.id === c.parent_id)?.name ?? '—'}
+                </span>
+              )}
+            </span>
+            <button
+              className="text-xs text-[#71747a] hover:text-[#e8eaed]"
+              onClick={() => setPermsFor(permsFor === c.id ? null : c.id)}
+            >
+              {permsFor === c.id ? 'hide perms' : 'perms'}
+            </button>
+            <button className="text-red-400 text-xs" onClick={() => admin.deleteChannel(c.id)}>
+              delete
+            </button>
+          </div>
+          {permsFor === c.id && <ChannelPermsPanel guild={guild} admin={admin} cid={c.id} />}
         </div>
       ))}
-      <div className="flex gap-2 mt-3">
+
+      <div className="flex flex-wrap gap-2 mt-4">
         <input
-          className="flex-1 px-2 py-1 rounded bg-[#0f0f11] border border-[#333]"
+          className="flex-1 min-w-[8rem] px-2 py-1 rounded bg-[#0f0f11] border border-[#333]"
           placeholder="new channel name"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <select className="bg-[#0f0f11] border border-[#333] rounded px-2" value={kind} onChange={(e) => setKind(e.target.value)}>
+        <select
+          className="bg-[#0f0f11] border border-[#333] rounded px-2"
+          value={kind}
+          onChange={(e) => setKind(e.target.value)}
+        >
           <option value="text">text</option>
           <option value="voice">voice</option>
           <option value="category">category</option>
         </select>
+        <select
+          className="bg-[#0f0f11] border border-[#333] rounded px-2 max-w-[9rem]"
+          value={parent}
+          onChange={(e) => setParent(e.target.value)}
+          disabled={kind === 'category'}
+        >
+          <option value="">no category</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
         <button
           className="px-3 rounded bg-[var(--accent)] text-white"
           onClick={() => {
-            if (name.trim()) admin.createChannel({ name: name.trim(), kind }).then(() => setName(''));
+            if (!name.trim()) return;
+            admin
+              .createChannel({
+                name: name.trim(),
+                kind,
+                parent_id: kind === 'category' || !parent ? undefined : parent,
+              })
+              .then(() => setName(''));
           }}
         >
           add
         </button>
       </div>
+      <p className="text-xs text-[#5b5e63] mt-2">
+        Tip: make a “Staff” category, open its <b>perms</b>, deny <i>View</i> for @everyone and allow it for
+        the staff role. Channels inside inherit it.
+      </p>
+    </div>
+  );
+}
+
+function ChannelPermsPanel({ guild, admin, cid }: { guild: Guild; admin: Admin; cid: string }) {
+  const [ov, setOv] = useState<ChannelOverride[] | null>(null);
+  const reload = () => admin.listOverrides(cid).then(setOv).catch(() => setOv([]));
+  useEffect(() => {
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cid]);
+
+  const roleOv = (rid: string) =>
+    ov?.find((o) => o.target_type === 'role' && o.target_id === rid) ?? { allow: 0, deny: 0 };
+
+  const setState = async (rid: string, bit: number, next: 'inherit' | 'allow' | 'deny') => {
+    const cur = roleOv(rid);
+    let allow = cur.allow & ~bit;
+    let deny = cur.deny & ~bit;
+    if (next === 'allow') allow |= bit;
+    if (next === 'deny') deny |= bit;
+    await admin.setOverride(cid, rid, { target_type: 'role', allow, deny });
+    reload();
+  };
+
+  if (!ov) return <p className="pl-6 py-1 text-xs text-[#5b5e63]">Loading permissions…</p>;
+
+  return (
+    <div className="ml-6 mb-2 rounded-lg bg-[#0f0f11] border border-[#232529] p-2 overflow-x-auto">
+      <table className="text-xs">
+        <thead>
+          <tr className="text-[#5b5e63]">
+            <th className="text-left pr-3 font-normal">role</th>
+            {OVERRIDE_PERMS.map(([, label]) => (
+              <th key={label} className="px-1 font-normal">
+                {label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {guild.roles.map((r) => {
+            const cur = roleOv(r.id);
+            return (
+              <tr key={r.id} className="text-[#c7c9cd]">
+                <td className="pr-3 py-0.5 whitespace-nowrap">{r.name}</td>
+                {OVERRIDE_PERMS.map(([bit]) => {
+                  const on = cur.allow & bit ? 'allow' : cur.deny & bit ? 'deny' : 'inherit';
+                  return (
+                    <td key={bit} className="px-1 text-center">
+                      <div className="inline-flex rounded overflow-hidden border border-[#333]">
+                        {(['deny', 'inherit', 'allow'] as const).map((s) => (
+                          <button
+                            key={s}
+                            title={s}
+                            onClick={() => setState(r.id, bit, s)}
+                            className={`w-5 h-5 leading-5 ${
+                              on === s
+                                ? s === 'allow'
+                                  ? 'bg-green-600 text-white'
+                                  : s === 'deny'
+                                    ? 'bg-red-600 text-white'
+                                    : 'bg-[#333] text-[#e8eaed]'
+                                : 'text-[#5b5e63] hover:bg-[#1a1d21]'
+                            }`}
+                          >
+                            {s === 'allow' ? '✓' : s === 'deny' ? '✕' : '∅'}
+                          </button>
+                        ))}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -241,6 +384,99 @@ function InvitesTab({ admin }: { admin: Admin }) {
       >
         Create invite link
       </button>
+    </div>
+  );
+}
+
+function WebhooksTab({ guild, admin }: { guild: Guild; admin: Admin }) {
+  const textChannels = guild.channels.filter((c) => c.kind === 'text');
+  const [cid, setCid] = useState(textChannels[0]?.id ?? '');
+  const [hooks, setHooks] = useState<Webhook[]>([]);
+  const [name, setName] = useState('');
+  const [copied, setCopied] = useState('');
+
+  const refresh = (c = cid) => {
+    if (!c) return setHooks([]);
+    admin.listWebhooks(c).then(setHooks).catch(() => setHooks([]));
+  };
+  useEffect(() => {
+    refresh(cid);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cid]);
+
+  if (!textChannels.length) {
+    return <p className="text-[#71747a]">Create a text channel first.</p>;
+  }
+
+  return (
+    <div>
+      <h3 className="font-medium text-[#e8eaed] mb-3">Webhooks</h3>
+      <select
+        className="bg-[#0f0f11] border border-[#333] rounded px-2 py-1 mb-3"
+        value={cid}
+        onChange={(e) => setCid(e.target.value)}
+      >
+        {textChannels.map((c) => (
+          <option key={c.id} value={c.id}>
+            #{c.name}
+          </option>
+        ))}
+      </select>
+
+      {hooks.map((h) => (
+        <div key={h.id} className="py-2 border-b border-[#1f1f22]">
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-[#c7c9cd]">{h.name}</span>
+            <button
+              className="text-xs text-[var(--accent)]"
+              onClick={() => {
+                navigator.clipboard.writeText(h.url);
+                setCopied(h.id);
+              }}
+            >
+              {copied === h.id ? 'copied' : 'copy URL'}
+            </button>
+            <button
+              className="text-xs text-[#71747a] hover:text-[#e8eaed]"
+              onClick={() => admin.regenerateWebhook(h.id).then(() => refresh())}
+            >
+              regenerate
+            </button>
+            <button
+              className="text-xs text-red-400"
+              onClick={() => admin.deleteWebhook(h.id).then(() => refresh())}
+            >
+              delete
+            </button>
+          </div>
+          <code className="block mt-1 text-[10px] text-[#5b5e63] truncate">{h.url}</code>
+        </div>
+      ))}
+      {!hooks.length && <p className="text-[#5b5e63] text-xs py-2">No webhooks for this channel yet.</p>}
+
+      <div className="flex gap-2 mt-3">
+        <input
+          className="flex-1 px-2 py-1 rounded bg-[#0f0f11] border border-[#333]"
+          placeholder="webhook name (e.g. GitHub)"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <button
+          className="px-3 rounded bg-[var(--accent)] text-white"
+          onClick={() => {
+            if (name.trim() && cid)
+              admin.createWebhook(cid, name.trim()).then(() => {
+                setName('');
+                refresh();
+              });
+          }}
+        >
+          create
+        </button>
+      </div>
+      <p className="text-xs text-[#5b5e63] mt-2">
+        POST JSON <code>{'{ "content": "…", "username": "…" }'}</code> to the URL to post a message.
+      </p>
     </div>
   );
 }

@@ -43,9 +43,17 @@ requirement is valid TLS certs on both servers.
 
 **Permissions** are Discord-like: server roles carry a permission bitmask (`VIEW_CHANNEL`,
 `SEND_MESSAGES`, `CONNECT`, `MANAGE_CHANNELS`, `MANAGE_ROLES`, `ADMINISTRATOR`, …); each
-channel can `allow`/`deny` per role or per member. Effective = owner→all, else
-(`@everyone` ∪ roles), `ADMINISTRATOR` short-circuits, then channel overrides
-(`@everyone` → roles → member), then a `VIEW_CHANNEL` gate.
+channel — or **category** — can `allow`/`deny` per role or per member. Effective = owner→all,
+else (`@everyone` ∪ roles), `ADMINISTRATOR` short-circuits, then the parent category's
+overrides, then the channel's own overrides (each layer `@everyone` → roles → member), then a
+`VIEW_CHANNEL` gate. So a "Staff" category that denies `VIEW_CHANNEL` to `@everyone` and
+allows it for a `Staff` role hides every channel nested inside it from everyone else. Edit
+overrides in **Guild settings → Channels → perms**.
+
+**Webhooks** post into a guild channel from outside: create one in **Guild settings →
+Webhooks** (`MANAGE_CHANNELS`), then `POST {"content": "...", "username": "..."}` to the
+returned `/webhooks/<id>/<token>` URL (Discord-compatible payload; `username` overrides the
+display name). Messages land in the channel with a `via_webhook` marker.
 
 **Voice channels** reuse the call mesh: the channel server is the room's *manager* (signaling
 only, persistent, join-by-choice), member user servers relay audio directly — `CONNECT`-gated.

@@ -7,7 +7,7 @@ use crate::perms::{self, MANAGE_CHANNELS, MANAGE_ROLES};
 use crate::state::AppState;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use bscp_common::uuid;
 use serde::Deserialize;
@@ -20,7 +20,29 @@ pub fn router() -> Router<AppState> {
             "/api/guilds/:gid/channels/:cid",
             axum::routing::patch(patch).delete(delete_channel),
         )
+        .route("/api/channels/:cid/overrides", get(list_overrides))
         .route("/api/channels/:cid/overrides/:target", axum::routing::put(put_override))
+}
+
+/// The raw override rows for a channel — powers the per-channel permission editor.
+async fn list_overrides(
+    State(state): State<AppState>,
+    user: Assertion,
+    Path(cid): Path<String>,
+) -> ApiResult<Json<Value>> {
+    let (gid, _, _) = channel_ctx(&state, &cid).await?;
+    guard(&state, &user.sub, &gid, None, MANAGE_ROLES).await?;
+    let rows: Vec<(String, String, i64, i64)> = sqlx::query_as(
+        "SELECT target_type, target_id, allow, deny FROM channel_overrides WHERE channel_id = ?",
+    )
+    .bind(&cid)
+    .fetch_all(&state.pool)
+    .await?;
+    let out: Vec<Value> = rows
+        .into_iter()
+        .map(|(tt, tid, a, d)| json!({ "target_type": tt, "target_id": tid, "allow": a as u64, "deny": d as u64 }))
+        .collect();
+    Ok(Json(json!(out)))
 }
 
 #[derive(Deserialize)]

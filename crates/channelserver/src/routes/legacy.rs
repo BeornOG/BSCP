@@ -16,7 +16,6 @@ pub fn router() -> Router<AppState> {
         .route("/api/channel/webhooks", get(list_webhooks).post(create_webhook))
         .route("/api/channel/webhooks/:id", delete(delete_webhook))
         .route("/api/channel/webhooks/:id/regenerate", post(regenerate_webhook))
-        .route("/webhooks/:id/:token", post(receive_webhook))
         .route("/.well-known/BSCP/channelserver", get(wellknown))
         .route("/.well-known/BSCP/channelserver.json", get(wellknown))
 
@@ -33,7 +32,6 @@ struct ChannelMessage {
 #[derive(FromRow)]
 struct ChannelWebhook {
     id: String,
-    channel_path: String,
     name: String,
     token: String,
     profile_pic: Option<String>,
@@ -259,61 +257,6 @@ async fn regenerate_webhook(State(st): State<AppState>, Path(id): Path<String>) 
     }
 }
 
-// ── POST /webhooks/:id/:token ────────────────────────────────────────────
-
-#[derive(Deserialize)]
-struct WebhookPayload {
-    content: Option<String>,
-}
-
-async fn receive_webhook(
-    State(st): State<AppState>,
-    Path((id, token)): Path<(String, String)>,
-    Json(payload): Json<WebhookPayload>,
-) -> impl IntoResponse {
-    let Some(content) = payload.content else {
-        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Missing content" }))).into_response();
-    };
-
-    let webhook = sqlx::query_as::<_, ChannelWebhook>("SELECT * FROM channel_webhooks WHERE id = ? AND token = ?")
-        .bind(&id)
-        .bind(&token)
-        .fetch_optional(&st.pool)
-        .await
-        .ok()
-        .flatten();
-    let Some(webhook) = webhook else {
-        return (StatusCode::NOT_FOUND, Json(json!({ "error": "Invalid webhook" }))).into_response();
-    };
-
-    let _ = sqlx::query("UPDATE channel_webhooks SET last_used = ? WHERE id = ?")
-        .bind(now_ts())
-        .bind(&webhook.id)
-        .execute(&st.pool)
-        .await;
-
-    let full_id = format!("{}/message/{}", st.domain, uuid());
-    let sender = format!("webhook-{}@{}", webhook.id, st.domain);
-    let res = sqlx::query(
-        "INSERT INTO channel_messages (id, channel_path, sender, text, timestamp) VALUES (?, ?, ?, ?, ?)",
-    )
-    .bind(&full_id)
-    .bind(&webhook.channel_path)
-    .bind(&sender)
-    .bind(&content)
-    .bind(now_ts())
-    .execute(&st.pool)
-    .await;
-
-    match res {
-        Ok(_) => (StatusCode::CREATED, Json(json!({ "success": true, "message_id": full_id }))).into_response(),
-        Err(e) => {
-            tracing::error!(error = %e, "receive_webhook insert failed");
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "insert failed" }))).into_response()
-        }
-    }
-}
-
 // ── GET /.well-known/BSCP/channelserver ──────────────────────────────────
 
 async fn wellknown(State(st): State<AppState>) -> impl IntoResponse {
@@ -325,6 +268,8 @@ async fn wellknown(State(st): State<AppState>) -> impl IntoResponse {
                 "channel_send": "/api/channel/send",
                 "channel_poll": "/api/channel/poll",
                 "channel_webhooks": "/api/channel/webhooks",
+                "guild_webhooks": "/api/channels/{id}/webhooks",
+                "webhook_delivery": "/webhooks/{id}/{token}",
                 "guilds": "/api/guilds",
                 "guilds_mine": "/api/guilds/mine",
                 "invite_accept": "/api/invites/{code}/accept",

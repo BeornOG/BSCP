@@ -74,15 +74,6 @@ pub async fn effective(state: &AppState, guild_id: &str, user: &str, channel_id:
 
     let Some(channel_id) = channel_id else { return base };
 
-    // channel overrides: @everyone → each of my roles → member-specific
-    let overrides: Vec<(String, String, i64, i64)> = sqlx::query_as(
-        "SELECT target_type, target_id, allow, deny FROM channel_overrides WHERE channel_id = ?",
-    )
-    .bind(channel_id)
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_default();
-
     let everyone_id: Option<String> =
         sqlx::query_scalar("SELECT id FROM roles WHERE guild_id = ? AND is_everyone = 1")
             .bind(guild_id)
@@ -91,14 +82,48 @@ pub async fn effective(state: &AppState, guild_id: &str, user: &str, channel_id:
             .ok()
             .flatten();
 
-    let apply = |mut p: u64, allow: u64, deny: u64| {
-        p &= !deny;
-        p | allow
-    };
+    // Resolve overrides in Discord order: the parent category first (channels
+    // inherit their category's overrides — a hidden "Staff" category hides every
+    // channel inside it), then the channel's own overrides on top.
+    let parent_id: Option<String> = sqlx::query_scalar("SELECT parent_id FROM channels WHERE id = ?")
+        .bind(channel_id)
+        .fetch_optional(&state.pool)
+        .await
+        .ok()
+        .flatten()
+        .flatten();
 
     let mut p = base;
-    if let Some(eid) = &everyone_id {
-        for (tt, tid, a, d) in &overrides {
+    for scope in parent_id.as_deref().into_iter().chain(std::iter::once(channel_id)) {
+        let overrides: Vec<(String, String, i64, i64)> = sqlx::query_as(
+            "SELECT target_type, target_id, allow, deny FROM channel_overrides WHERE channel_id = ?",
+        )
+        .bind(scope)
+        .fetch_all(&state.pool)
+        .await
+        .unwrap_or_default();
+        p = apply_scope(p, &overrides, everyone_id.as_deref(), &my_role_ids, user);
+    }
+
+    if p & VIEW_CHANNEL == 0 {
+        return 0;
+    }
+    p
+}
+
+/// Apply one channel (or category) override layer: `@everyone` → union of the
+/// member's roles → member-specific, each as `p = (p & !deny) | allow`.
+fn apply_scope(
+    mut p: u64,
+    overrides: &[(String, String, i64, i64)],
+    everyone_id: Option<&str>,
+    my_role_ids: &[String],
+    user: &str,
+) -> u64 {
+    let apply = |p: u64, allow: u64, deny: u64| (p & !deny) | allow;
+
+    if let Some(eid) = everyone_id {
+        for (tt, tid, a, d) in overrides {
             if tt == "role" && tid == eid {
                 p = apply(p, *a as u64, *d as u64);
             }
@@ -106,21 +131,17 @@ pub async fn effective(state: &AppState, guild_id: &str, user: &str, channel_id:
     }
     // accumulate role allow/deny then apply once (Discord semantics)
     let (mut role_allow, mut role_deny) = (0u64, 0u64);
-    for (tt, tid, a, d) in &overrides {
+    for (tt, tid, a, d) in overrides {
         if tt == "role" && my_role_ids.iter().any(|r| r == tid) {
             role_allow |= *a as u64;
             role_deny |= *d as u64;
         }
     }
     p = apply(p, role_allow, role_deny);
-    for (tt, tid, a, d) in &overrides {
+    for (tt, tid, a, d) in overrides {
         if tt == "member" && tid == user {
             p = apply(p, *a as u64, *d as u64);
         }
-    }
-
-    if p & VIEW_CHANNEL == 0 {
-        return 0;
     }
     p
 }
@@ -190,5 +211,37 @@ mod tests {
         sqlx::query("UPDATE channel_overrides SET deny = ? WHERE channel_id='c' AND target_id='everyone'")
             .bind((SEND_MESSAGES | VIEW_CHANNEL) as i64).execute(p).await.unwrap();
         assert_eq!(effective(&st, "g", "bob@b", Some("c")).await, 0);
+    }
+
+    #[tokio::test]
+    async fn staff_category_hides_child_channels() {
+        let st = test_state().await;
+        let p = &st.pool;
+        let now = bscp_common::now_ts();
+        sqlx::query("INSERT INTO guilds (id,name,owner,created_at) VALUES ('g','G','owner@a',?)").bind(now).execute(p).await.unwrap();
+        sqlx::query("INSERT INTO roles (id,guild_id,name,permissions,is_everyone) VALUES ('everyone','g','@everyone',?,1)")
+            .bind((VIEW_CHANNEL | SEND_MESSAGES) as i64).execute(p).await.unwrap();
+        sqlx::query("INSERT INTO roles (id,guild_id,name,permissions,is_everyone) VALUES ('staff','g','staff',0,0)")
+            .execute(p).await.unwrap();
+        // a "Staff" category with a text channel nested under it
+        sqlx::query("INSERT INTO channels (id,guild_id,name,kind,path) VALUES ('cat','g','Staff','category','chan.test#g#cat')").execute(p).await.unwrap();
+        sqlx::query("INSERT INTO channels (id,guild_id,parent_id,name,kind,path) VALUES ('sc','g','cat','staff-chat','text','chan.test#g#cat#sc')").execute(p).await.unwrap();
+        for u in ["alice@a", "bob@b"] {
+            sqlx::query("INSERT INTO guild_members (guild_id,user_id,joined_at) VALUES ('g',?,?)").bind(u).bind(now).execute(p).await.unwrap();
+        }
+        sqlx::query("INSERT INTO member_roles (guild_id,user_id,role_id) VALUES ('g','alice@a','staff')").execute(p).await.unwrap();
+
+        // hide the category from @everyone, grant it back to the staff role — on the category only
+        sqlx::query("INSERT INTO channel_overrides (channel_id,target_type,target_id,allow,deny) VALUES ('cat','role','everyone',0,?)")
+            .bind(VIEW_CHANNEL as i64).execute(p).await.unwrap();
+        sqlx::query("INSERT INTO channel_overrides (channel_id,target_type,target_id,allow,deny) VALUES ('cat','role','staff',?,0)")
+            .bind(VIEW_CHANNEL as i64).execute(p).await.unwrap();
+
+        // child channel inherits: staff sees it, everyone else does not
+        assert!(has(effective(&st, "g", "alice@a", Some("sc")).await, VIEW_CHANNEL));
+        assert_eq!(effective(&st, "g", "bob@b", Some("sc")).await, 0);
+        // and the category node itself
+        assert!(has(effective(&st, "g", "alice@a", Some("cat")).await, VIEW_CHANNEL));
+        assert_eq!(effective(&st, "g", "bob@b", Some("cat")).await, 0);
     }
 }

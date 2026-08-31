@@ -86,4 +86,22 @@ export interface GMessage {
   sender: string;
   text: string;
   timestamp: number;
+  via_webhook?: string | null;
+}
+
+export interface ChannelOverride {
+  target_type: 'role' | 'member';
+  target_id: string;
+  allow: number;
+  deny: number;
+}
+
+export interface Webhook {
+  id: string;
+  name: string;
+  channel_id: string | null;
+  url: string;
+  profile_pic: string | null;
+  created_at: number;
+  last_used: number | null;
 }

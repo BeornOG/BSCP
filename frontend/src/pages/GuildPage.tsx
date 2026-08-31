@@ -19,7 +19,22 @@ export default function GuildPage() {
   const [settings, setSettings] = useState(false);
 
   const textChannels = useMemo(() => guild?.channels.filter((c) => c.kind === 'text') ?? [], [guild]);
-  const voiceChannels = useMemo(() => guild?.channels.filter((c) => c.kind === 'voice') ?? [], [guild]);
+
+  // Group visible channels under their category (channels the server hides —
+  // e.g. a "Staff" category the member can't view — never arrive here).
+  const groups = useMemo(() => {
+    const all = guild?.channels ?? [];
+    const cats = all.filter((c) => c.kind === 'category').sort((a, b) => a.position - b.position);
+    const kids = (parentId: string | null) =>
+      all
+        .filter((c) => c.kind !== 'category' && (c.parent_id ?? null) === parentId)
+        .sort((a, b) => a.position - b.position);
+    return [
+      { id: null as string | null, name: null as string | null, channels: kids(null) },
+      ...cats.map((c) => ({ id: c.id, name: c.name, channels: kids(c.id) })),
+    ].filter((g) => g.channels.length);
+  }, [guild]);
+
   const active = useMemo(
     () => guild?.channels.find((c) => c.id === cid) ?? textChannels[0],
     [guild, cid, textChannels],
@@ -49,23 +64,29 @@ export default function GuildPage() {
           )}
         </div>
         <div className="flex-1 overflow-y-auto py-2 text-sm">
-          <ChannelGroup label="Text">
-            {textChannels.map((c) => (
-              <ChannelRow key={c.id} c={c} active={c.id === active?.id} onClick={() => nav(`/g/${cs}/${gid}/${c.id}`)} />
-            ))}
-          </ChannelGroup>
-          <ChannelGroup label="Voice">
-            {voiceChannels.map((c) => (
-              <VoiceRow
-                key={c.id}
-                c={c}
-                joined={call.voiceChannel === c.id}
-                members={call.voiceChannel === c.id ? call.peers : []}
-                canConnect={can(c.my_permissions, P.CONNECT)}
-                onJoin={() => (call.voiceChannel === c.id ? call.leaveRoom() : call.joinRoom(cs, c.id))}
-              />
-            ))}
-          </ChannelGroup>
+          {groups.map((g) => (
+            <ChannelGroup key={g.id ?? '_root'} label={g.name}>
+              {g.channels.map((c) =>
+                c.kind === 'voice' ? (
+                  <VoiceRow
+                    key={c.id}
+                    c={c}
+                    joined={call.voiceChannel === c.id}
+                    members={call.voiceChannel === c.id ? call.peers : []}
+                    canConnect={can(c.my_permissions, P.CONNECT)}
+                    onJoin={() => (call.voiceChannel === c.id ? call.leaveRoom() : call.joinRoom(cs, c.id))}
+                  />
+                ) : (
+                  <ChannelRow
+                    key={c.id}
+                    c={c}
+                    active={c.id === active?.id}
+                    onClick={() => nav(`/g/${cs}/${gid}/${c.id}`)}
+                  />
+                ),
+              )}
+            </ChannelGroup>
+          ))}
         </div>
         {call.voiceChannel && (
           <div className="px-3 py-2 border-t border-[#232529] flex items-center gap-2 text-xs">
@@ -104,10 +125,12 @@ export default function GuildPage() {
   );
 }
 
-function ChannelGroup({ label, children }: { label: string; children: React.ReactNode }) {
+function ChannelGroup({ label, children }: { label: string | null; children: React.ReactNode }) {
   return (
     <div className="mb-3">
-      <p className="px-3 text-[11px] uppercase tracking-wide text-[#71747a] mb-1">{label}</p>
+      {label && (
+        <p className="px-3 text-[11px] uppercase tracking-wide text-[#71747a] mb-1">{label}</p>
+      )}
       {children}
     </div>
   );

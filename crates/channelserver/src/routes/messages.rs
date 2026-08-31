@@ -39,7 +39,8 @@ async fn list(
     guard(&state, &user.sub, &gid, Some(&cid), VIEW_CHANNEL).await?;
 
     let mut sql = String::from(
-        "SELECT id, sender, text, timestamp FROM channel_messages WHERE channel_id = ? AND deleted = 0",
+        "SELECT id, sender, text, timestamp, via_webhook FROM channel_messages \
+         WHERE channel_id = ? AND deleted = 0",
     );
     if q.since.is_some() {
         sql.push_str(" AND timestamp > ?");
@@ -49,7 +50,8 @@ async fn list(
     }
     sql.push_str(" ORDER BY timestamp DESC LIMIT ?");
 
-    let mut query = sqlx::query_as::<_, (String, Option<String>, Option<String>, f64)>(&sql).bind(&cid);
+    let mut query =
+        sqlx::query_as::<_, (String, Option<String>, Option<String>, f64, Option<String>)>(&sql).bind(&cid);
     if let Some(s) = q.since {
         query = query.bind(s);
     }
@@ -60,7 +62,9 @@ async fn list(
     rows.reverse();
     let out: Vec<Value> = rows
         .into_iter()
-        .map(|(id, sender, text, ts)| json!({ "id": id, "sender": sender, "text": text, "timestamp": ts }))
+        .map(|(id, sender, text, ts, via)| {
+            json!({ "id": id, "sender": sender, "text": text, "timestamp": ts, "via_webhook": via })
+        })
         .collect();
     Ok(Json(json!(out)))
 }

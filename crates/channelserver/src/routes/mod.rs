@@ -6,6 +6,7 @@ pub mod members;
 pub mod messages;
 pub mod roles;
 pub mod voice;
+pub mod webhooks;
 
 use crate::state::AppState;
 use axum::http::StatusCode;
@@ -22,6 +23,7 @@ pub fn router(state: AppState) -> Router {
         .merge(messages::router())
         .merge(invites::router())
         .merge(voice::router())
+        .merge(webhooks::router())
         .merge(legacy::router())
         .merge(crate::webui::router())
         .merge(crate::call_ws::router())

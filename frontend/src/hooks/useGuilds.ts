@@ -1,7 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiPost } from '../lib/api';
 import { gw, gwJson } from '../lib/guilds';
-import type { GuildDetail, GuildSummary, GMember, GMessage } from '../lib/guilds';
+import type {
+  GuildDetail,
+  GuildSummary,
+  GMember,
+  GMessage,
+  ChannelOverride,
+  Webhook,
+} from '../lib/guilds';
 
 export function useGuilds() {
   return useQuery<GuildSummary[]>({
@@ -95,6 +102,13 @@ export function useGuildAdmin(cs: string, gid: string) {
       ),
     setOverride: (cid: string, target: string, v: { target_type: string; allow: number; deny: number }) =>
       gwJson(cs, `channels/${cid}/overrides/${encodeURIComponent(target)}`, 'PUT', v).then(inv),
+    listOverrides: (cid: string) => gw<ChannelOverride[]>(cs, `channels/${cid}/overrides`),
+    listWebhooks: (cid: string) => gw<Webhook[]>(cs, `channels/${cid}/webhooks`),
+    createWebhook: (cid: string, name: string) =>
+      gwJson<Webhook>(cs, `channels/${cid}/webhooks`, 'POST', { name }),
+    deleteWebhook: (wid: string) => gw(cs, `webhooks/${wid}`, { method: 'DELETE' }),
+    regenerateWebhook: (wid: string) =>
+      gwJson<{ url: string }>(cs, `webhooks/${wid}/regenerate`, 'POST', {}),
     createInvite: () => gwJson<{ code: string; url: string }>(cs, `guilds/${gid}/invites`, 'POST', {}),
     listInvites: () => gw<{ code: string; url: string; uses: number }[]>(cs, `guilds/${gid}/invites`),
     deleteInvite: (code: string) => gw(cs, `guilds/${gid}/invites/${code}`, { method: 'DELETE' }),
