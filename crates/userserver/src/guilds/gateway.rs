@@ -33,6 +33,9 @@ pub async fn forward(
     if path.contains("..") {
         anyhow::bail!("bad path");
     }
+    if state.domain_blocked(cs).await {
+        anyhow::bail!("channel server domain is blocked by this server");
+    }
     let base = channel_base(state, cs)
         .await
         .ok_or_else(|| anyhow::anyhow!("not a known channel server"))?;

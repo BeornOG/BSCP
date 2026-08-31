@@ -5,6 +5,7 @@ pub mod auth;
 pub mod call;
 pub mod guilds;
 pub mod media;
+pub mod moderation;
 pub mod modules;
 pub mod oidc;
 #[cfg(debug_assertions)]

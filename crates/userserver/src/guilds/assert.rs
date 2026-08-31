@@ -21,6 +21,9 @@ fn cache() -> &'static Cache {
 
 /// A short-lived RS256 assertion for `user` addressed to channel server `aud`.
 pub async fn assertion_for(state: &AppState, user: &User, aud: &str) -> anyhow::Result<String> {
+    if state.domain_blocked(aud).await {
+        anyhow::bail!("channel server domain is blocked by this server");
+    }
     let key = (user.id.clone(), aud.to_string());
     let now = now_ts();
 
