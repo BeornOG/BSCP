@@ -22,6 +22,51 @@ Config: `ICE_PUBLIC_IP` (this server's public IP for 1:1 NAT) and `RTC_PORT_MIN`
 (the UDP range to open). No external STUN/TURN is needed as long as the user servers are
 mutually reachable (which federation already requires).
 
+## Channel servers — guilds
+
+A channel server hosts many **guilds** (Discord-style servers), each a tree of **channels**
+(`text` / `voice` / `category`, nestable). Everything is UUID-keyed — the path is
+`domain#<guild-uuid>#<channel-uuid>#…` and names are mutable metadata.
+
+**The browser only ever talks to its own user server**, which proxies guild/channel/message
+traffic to the channel server (`/api/gw/<channel-server>/…`) and polls it for updates. The
+known trade-off: a malicious user-server operator could snoop a user's guilds.
+
+**Auth is a federation assertion — automatic and mutual.** When a member's user server needs
+to call a channel server, it silently mints a short-lived RS256 JWT
+(`iss`=userserver, `sub`=`user@domain`, `aud`=channel-server) with its OIDC signing key. The
+channel server verifies the signature against the issuer's JWKS **and** calls back
+(`POST {iss}/federation/assert/verify`) to confirm the issuer really minted it — replay /
+key-substitution both fail unless an attacker controls the issuer domain's TLS. There is no
+OIDC consent prompt: **joining the guild is the authorization.** The only production
+requirement is valid TLS certs on both servers.
+
+**Permissions** are Discord-like: server roles carry a permission bitmask (`VIEW_CHANNEL`,
+`SEND_MESSAGES`, `CONNECT`, `MANAGE_CHANNELS`, `MANAGE_ROLES`, `ADMINISTRATOR`, …); each
+channel can `allow`/`deny` per role or per member. Effective = owner→all, else
+(`@everyone` ∪ roles), `ADMINISTRATOR` short-circuits, then channel overrides
+(`@everyone` → roles → member), then a `VIEW_CHANNEL` gate.
+
+**Voice channels** reuse the call mesh: the channel server is the room's *manager* (signaling
+only, persistent, join-by-choice), member user servers relay audio directly — `CONNECT`-gated.
+
+**Invites** are shareable links: `https://<channel-server>/invite/<code>`. Opening one shows a
+landing page that bounces the visitor to `https://<their-server>/join?invite=…`; one click and
+their user server does the assertion + accept.
+
+### Operator console
+
+The channel server serves its own minimal console at `/`. On first run the operator signs in
+with **"Sign in with BSCP"** against their home user server (the channel server is an OIDC
+client, dynamically registered) — the first person to complete it claims the operator role.
+The console manages the **guild-creator allowlist** (`user@domain` identities permitted to
+create guilds) and shows a table of guilds ↔ owners. The allowlist can also be seeded from
+config: `CH_ALLOW_GUILD_CREATORS=alice@a.example,bob@b.example`.
+
+Channel-server config: `CH_PUBLIC_URL` (externally reachable base URL, for the OIDC
+`redirect_uri` and invite links; default `http://{DOMAIN}`), `CH_SECRET_KEY` (operator cookie),
+plus the existing `CH_PORT` / `CH_DB_NAME` / `DOMAIN`.
+
 ## Sign in with BSCP (OIDC)
 
 Every user server is its own **OpenID Connect provider** — there is no central issuer. An app
